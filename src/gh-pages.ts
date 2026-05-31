@@ -20,6 +20,16 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
       // Remove interactive /save-note references (gh-pages is static)
       html = html.replace(/fetch\(['"]\/save-note['"][\s\S]*?\)\.catch\(\(\)=>{}\)\);/g, "");
       html = html.replace(/\/save-note/g, "#");
+      // Strip user notes from embedded window.__DATA__
+      html = html.replace(/window\.__DATA__\s*=\s*(\{.*?\});/s, (match: string, dataStr: string) => {
+        try {
+          const data = JSON.parse(dataStr);
+          delete data.notes;
+          return "window.__DATA__ = " + JSON.stringify(data) + ";";
+        } catch {
+          return match;
+        }
+      });
       // Inject nav bar (static version, no dropdown)
       html = html.replace("{{NAV_BAR}}", navHtml);
       writeFileSync(join(ghPagesDir, file), html);
