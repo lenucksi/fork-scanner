@@ -31,6 +31,7 @@ interface Args {
   "merge-deep": string | null;
   "gh-pages": boolean;
   "gh-pages-subpath": string | undefined;
+  "gh-pages-notes": boolean;
   incremental: boolean;
   versioned: boolean;
 }
@@ -51,6 +52,7 @@ async function main() {
     .option("merge-deep", { type: "string", describe: "Deep output dir to merge into report" })
     .option("gh-pages", { type: "boolean", default: false, describe: "Export static GH Pages site" })
     .option("gh-pages-subpath", { type: "string", describe: "Subdirectory within gh-pages export (e.g., mrlesk-backlog.md)" })
+    .option("gh-pages-notes", { type: "boolean", default: false, describe: "Include user notes in gh-pages export" })
     .option("incremental", { type: "boolean", default: false, describe: "Incremental: only re-scan changed forks" })
     .option("versioned", { alias: "v", type: "boolean", default: false, describe: "Versioned output files" })
     .version(false)
@@ -97,7 +99,7 @@ async function main() {
     generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, argv.versioned, notesData, repo);
     console.log("Stage 2 report generated with " + deepMap.size + " deep analyses.");
     if (argv["gh-pages"]) {
-      exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"]);
+      exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
     }
     if (argv.serve) startServer(outputDir, argv.port);
     return;
@@ -140,7 +142,7 @@ async function main() {
         const existingForks = loadForks(outputDir);
         const existingCompare = loadCompareJsonl(outputDir);
         generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, argv.versioned, repo);
-        if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"]);
+        if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
         if (argv.serve) startServer(outputDir, argv.port);
         return;
       }
@@ -179,7 +181,7 @@ async function main() {
       }
 
       if (argv["gh-pages"]) {
-        exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"]);
+        exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
       }
       if (argv.serve) startServer(outputDir, argv.port);
       return;
@@ -226,7 +228,7 @@ async function main() {
   }
 
   if (argv["gh-pages"]) {
-    exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"]);
+    exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
   }
   if (argv.serve) startServer(outputDir, argv.port);
 }
@@ -270,6 +272,7 @@ async function runInteractive(outputDir: string) {
     "merge-deep": undefined,
     "gh-pages": false,
     "gh-pages-subpath": undefined,
+    "gh-pages-notes": false,
     versioned: false,
   };
 
