@@ -1,0 +1,22 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<nav class="fs-nav">
+  <div class="fs-nav-inner">
+    <a href="." class="fs-nav-logo">⬡ Fork Scanner</a>
+    <a href="report-stage1.html" class="fs-nav-link">Stage 1</a>
+    <a href="report-stage2.html" class="fs-nav-link">Stage 2</a>
+    <span class="fs-nav-spacer"></span>
+    <select id="fsVersionSelect" onchange="location=this.value">
+      <option value="">Latest report</option>
+      {{VERSION_OPTIONS}}
+    </select>
+  </div>
+</nav>
+<style>
+.fs-nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;height:48px;display:flex;align-items:center;font-family:system-ui,sans-serif}
+.fs-nav-inner{display:flex;align-items:center;gap:16px;max-width:1400px;margin:0 auto;width:100%}
+.fs-nav-logo{font-weight:700;color:var(--accent);text-decoration:none;font-size:1rem;white-space:nowrap}
+.fs-nav-link{color:var(--text-secondary);text-decoration:none;padding:4px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;white-space:nowrap}
+.fs-nav-link:hover{color:var(--text);background:var(--accent-light)}
+.fs-nav-spacer{flex:1}
+#fsVersionSelect{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.8rem;max-width:320px}
+</style>

@@ -1,0 +1,281 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Fork Analysis — Stage 2</title>
+<script src="chart.umd.min.js"></script>
+<style>
+:root{--bg:#f8f9fa;--surface:#fff;--text:#1a1a2e;--text-secondary:#555;--border:#dee2e6;--accent:#4361ee;--accent-light:#eef0ff;--green:#2ec4b6;--orange:#ff9f1c;--purple:#7209b7;--pink:#e83e8c}
+@media(prefers-color-scheme:dark){:root{--bg:#0f0f23;--surface:#1a1a2e;--text:#eaeaea;--text-secondary:#9ca3af;--border:#2d2d44;--accent:#5e7ce2;--accent-light:#1a1a3e}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+.container{max-width:1400px;margin:0 auto;padding:calc(24px + 48px) 24px 24px}
+h1{font-size:2rem;margin-bottom:4px}
+h2{font-size:1.4rem;margin:32px 0 16px;border-bottom:2px solid var(--accent);padding-bottom:8px}
+h3{font-size:1.1rem;margin:20px 0 10px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:32px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+.stat-card .num{font-size:2rem;font-weight:700}
+.stat-card .label{font-size:0.85rem;color:var(--text-secondary)}
+.charts-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:32px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+.chart-card canvas{max-height:280px}
+table{width:100%;border-collapse:collapse;margin:12px 0 24px;font-size:0.85rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{background:var(--accent-light);font-weight:600;white-space:nowrap}
+tr:hover{background:var(--accent-light)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:0.78rem;font-weight:600}
+.value-high{background:#d4edda;color:#155724}
+.value-medium{background:#fff3cd;color:#856404}
+.value-low{background:#e2e3e5;color:#383d41}
+.pr-merged{background:#d4edda;color:#155724}
+.pr-open{background:#cce5ff;color:#004085}
+.pr-closed{background:#f8d7da;color:#721c24}
+.pr-none{background:#e2e3e5;color:#6c757d}
+.tag{display:inline-block;padding:1px 8px;margin:1px;border-radius:4px;font-size:0.75rem;background:var(--accent-light);color:var(--accent)}
+.pill-new{background:#d4edda;color:#155724;border:1px solid #2ec4b6}
+.pill-updated{background:#fff3cd;color:#856404;border:1px solid #ff9f1c}
+.pill-rewritten{background:#f8d7da;color:#721c24;border:1px solid #e83e8c}
+.incremental-timeline{margin-top:12px;border-left:2px solid var(--border);padding-left:16px}
+.incremental-entry{padding:8px 12px;margin:6px 0;border-radius:6px;border:1px solid var(--border);font-size:0.85rem;background:var(--surface)}
+.incremental-entry.current{border-color:var(--accent);background:var(--accent-light);border-left:4px solid var(--accent)}
+.incremental-entry .entry-date{font-weight:600;color:var(--accent);font-size:0.8rem}
+.incremental-entry .entry-analysis{margin-top:4px;color:var(--text-secondary)}
+.detail-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.detail-header{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.detail-header:hover{background:var(--accent-light)}
+.detail-body{padding:16px;border-top:1px solid var(--border);display:none}
+.detail-card.open .detail-body{display:block}
+.detail-meta{display:flex;gap:8px;flex-wrap:wrap;font-size:0.85rem;margin-bottom:8px}
+.detail-desc{color:var(--text-secondary);font-size:0.9rem;margin-bottom:8px}
+.pr-entry{margin:6px 0;padding:8px;border-left:3px solid var(--accent);padding-left:10px}
+.pr-entry a{font-weight:700;color:var(--accent);text-decoration:none}
+.pr-entry a:hover{text-decoration:underline}
+.no-prs{padding:8px;border-left:3px solid var(--orange);background:var(--accent-light);border-radius:4px;font-size:0.85rem}
+.fork-actions{display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap}
+.fork-actions label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem}
+.fork-actions textarea{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical}
+.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}
+@media(max-width:768px){.container{padding:12px}.stats-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+{{NAV_BAR}}
+<div class="container">
+<h1>Fork Analysis — Stage 2</h1>
+<p style="color:var(--text-secondary);margin-bottom:24px">{{TOTAL_FORKS}} forks · {{REPO}} · {{DATE}}</p>
+
+<div class="stats-grid" id="statsGrid"></div>
+<div class="charts-row">
+  <div class="chart-card"><h3>Fork Status</h3><canvas id="statusChart"></canvas></div>
+  <div class="chart-card"><h3>Feature Popularity</h3><canvas id="featureChart"></canvas></div>
+</div>
+
+<h2>Priority Matrix</h2>
+<p style="color:var(--text-secondary);margin-bottom:12px">Forks sorted by value × upstreamability</p>
+<div style="overflow-x:auto"><table><thead><tr>
+<th>#</th><th>Fork</th><th>Title</th><th>Value</th><th>Upstr</th><th>Focus</th><th>PR</th><th>Tags</th>
+</tr></thead><tbody id="matrixBody"></tbody></table></div>
+
+<h2>Deep Analysis — Per Fork Details</h2>
+<p style="color:var(--text-secondary);margin-bottom:12px" id="deepCoverage"></p>
+<div id="changeFilter" style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem">
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" value="new" checked onchange="applyDetailFilter()"> <span class="pill pill-new">New</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" value="updated" checked onchange="applyDetailFilter()"> <span class="pill pill-updated">Updated</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" value="rewritten" checked onchange="applyDetailFilter()"> <span class="pill pill-rewritten">Rewritten</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" value="unchanged" checked onchange="applyDetailFilter()"> <span>Unchanged</span>
+  </label>
+  <span style="color:var(--border);width:1px;height:20px;display:inline-block;border-left:1px solid var(--border)"></span>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;opacity:0.6">
+    <input type="checkbox" value="excluded" onchange="applyDetailFilter()"> <span>Excluded</span>
+  </label>
+</div>
+<div id="forkDetails"></div>
+
+<h2>Feature Heatmap</h2>
+<p id="featureCount" style="color:var(--text-secondary);margin-bottom:12px"></p>
+<div style="overflow-x:auto"><table><thead><tr><th>Feature</th><th>Forks</th><th>%</th><th>Bar</th></tr></thead><tbody id="heatmapBody"></tbody></table></div>
+</div>
+
+<script>
+window.__DATA__ = {{DATA_JSON}};
+
+const D = window.__DATA__;
+
+document.getElementById("statsGrid").innerHTML = Object.entries(D.stats).filter(([k]) => k !== 'interestingForks').map(([k,v]) =>
+  `<div class="stat-card"><div class="num" style="color:${k==='total'?'var(--accent)':k==='highValue'?'var(--green)':'var(--text)'}">${v}</div><div class="label">${k}</div></div>`
+).join("");
+
+document.getElementById("matrixBody").innerHTML = (D.ordered || []).map((f,i) => {
+  const pr = f.prs || [];
+  const m = pr.filter(p=>p.merged_at).length;
+  const o = pr.filter(p=>!p.merged_at&&p.state==='open').length;
+  const prLabel = m ? m+' merged' : o ? o+' open' : pr.length ? pr.length+' closed' : 'No PR';
+  const prClass = m?'pr-merged':o?'pr-open':pr.length?'pr-closed':'pr-none';
+  return `<tr>
+    <td>${i+1}</td>
+    <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a></td>
+    <td>${esc(f.title||'')}</td>
+    <td><span class="pill value-${f.value}">${f.value}</span></td>
+    <td><span class="pill" style="background:${['#f8d7da','#f8d7da','#fff3cd','#cce5ff','#d4edda'][f.upstream-1]};color:${['#721c24','#721c24','#856404','#004085','#155724'][f.upstream-1]}">${f.upstream}/5</span></td>
+    <td><span class="pill" style="background:${f.focus==='feature'?'#cce5ff':f.focus==='fix'?'#d4edda':'#fff3cd'};color:${f.focus==='feature'?'#004085':f.focus==='fix'?'#155724':'#856404'}">${f.focus}</span></td>
+    <td><span class="pill ${prClass}">${prLabel}</span></td>
+    <td>${(f.tags||[]).slice(0,4).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
+  </tr>`;
+}).join('');
+
+const hData = D.heatmap || [];
+document.getElementById("featureCount").textContent = hData.length + ' feature categories across ' + D.forkCount + ' forks';
+var maxFreq = hData.length > 0 ? hData[0][1] : 1;
+document.getElementById("heatmapBody").innerHTML = hData.map(([feat,count]) =>
+  `<tr><td><strong>${esc(feat)}</strong></td><td>${count}</td><td>${(count/D.forkCount*100).toFixed(0)}%</td>
+  <td><div style="height:20px;background:var(--accent-light);border-radius:4px;overflow:hidden">
+  <div style="width:${Math.max(10,count/maxFreq*100)}%;height:100%;background:var(--accent);border-radius:4px"></div></div></td></tr>`
+).join('');
+
+// Coverage statement
+const cov = document.getElementById("deepCoverage");
+const totalInteresting = D.stats.interestingForks || 0;
+const deepCount = D.stats.deepAnalyzed || 0;
+const pct = totalInteresting > 0 ? Math.round(deepCount / totalInteresting * 100) : 0;
+cov.textContent = deepCount + " of " + totalInteresting + " interesting forks deep analyzed (" + pct + "% coverage). Checkboxes + notes saved via serve.ts or localStorage fallback.";
+
+// Fork details
+const detailsEl = document.getElementById("forkDetails");
+D.details.forEach(f => {
+  const isOpen = D.notes && D.notes[f.full_name] && D.notes[f.full_name].checked;
+  const prs = f.prs || [];
+  prs.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  const merged = prs.filter(p=>p.merged_at);
+  const open = prs.filter(p=>!p.merged_at&&p.state==='open');
+  const note = (D.notes&&D.notes[f.full_name])||{checked:false,note:''};
+
+  var card = document.createElement('div');
+  card.className = 'detail-card' + (isOpen ? ' open' : '');
+  card.innerHTML = `<div class="detail-header" onclick="this.parentElement.classList.toggle('open')">
+    <strong>${esc(f.full_name)}</strong>
+    <span class="pill value-${f.value}">${f.value}</span>
+    <span class="pill" style="background:${['#f8d7da','#f8d7da','#fff3cd','#cce5ff','#d4edda'][f.upstream-1]};color:${['#721c24','#721c24','#856404','#004085','#155724'][f.upstream-1]}">Upstr ${f.upstream}/5</span>
+    ${prs.length ? '<span class="pill '+(merged.length?'pr-merged':open.length?'pr-open':'pr-closed')+'">'+(merged.length||open.length||prs.length)+' PRs</span>' : '<span class="pill pr-none">No PR</span>'}
+  </div>
+  <div class="detail-body">
+    <div class="detail-meta">
+      <span>📅 ${f.pushed_at ? new Date(f.pushed_at).toISOString().slice(0,10) : '?'}</span>
+      <span>📈 +${f.max_ahead} ahead${f.max_behind > 0 ? ' / -'+f.max_behind+' behind' : ''}</span>
+      <span>📁 ${f.files||0} files</span>
+      <span>➕ +${f.adds||0} / ➖ -${f.dels||0} lines</span>
+      <span>🔗 <a href="https://github.com/${esc(f.full_name)}" target="_blank">View</a></span>
+    </div>
+    <strong>${esc(f.title||'')}</strong>
+    <div class="detail-desc">${esc(f.description||'')}</div>
+    ${f._updates && f._updates.length ? '<div class="incremental-timeline">'+f._updates.map(u => {
+      const ts = u.date ? new Date(u.date).toISOString().slice(0,16).replace('T',' ') : '';
+      const badgeCls = u.change === 'new' ? 'pill-new' : u.change === 'updated' ? 'pill-updated' : 'pill-rewritten';
+      const changeLabel = u.change === 'new' ? 'New' : u.change === 'updated' ? '▲ '+u.new_commits+' new' : '⚠ Rewritten';
+      const extra = u.upstreamability !== undefined ? ' · Upstr '+u.upstreamability+'/5' : '';
+      if (u._is_current) {
+        return '<div class="incremental-entry current"><div class="entry-date"><span class="pill '+badgeCls+'" style="margin-right:6px">'+changeLabel+'</span>'+ts+'</div><div class="entry-analysis">'+esc(u.analysis)+(u.value_assessment ? ' <span class="pill value-'+u.value_assessment+'">'+u.value_assessment+'</span>' : '')+extra+'</div></div>';
+      }
+      return '<div class="incremental-entry"><div class="entry-date"><span class="pill '+badgeCls+'" style="margin-right:6px">'+changeLabel+'</span>'+ts+'</div><div class="entry-analysis">'+esc(u.analysis)+(u.value_assessment ? ' <span class="pill value-'+u.value_assessment+'">'+u.value_assessment+'</span>' : '')+extra+'</div></div>';
+    }).join('\n')+'</div>' : ''}
+    <div style="margin:4px 0">${(f.tags||[]).map(t=>'<span class="tag">'+esc(t)+'</span>').join('')}</div>
+    ${prs.length ? prs.map(p => {
+      const stateIcon = p.merged_at ? '✅ Merged' : p.state==='open' ? '📌 Open' : '❌ Closed';
+      const str = p.reaction_count ? ' · '+p.reaction_count+' reactions' : '';
+      return '<div class="pr-entry"><a href="https://github.com/MrLesk/Backlog.md/pull/'+p.number+'" target="_blank"><strong>#'+p.number+'</strong></a> '+stateIcon+' <span style="font-size:0.8rem;color:var(--text-secondary)">created '+String(p.created_at||'').slice(0,10)+(p.merged_at?' · merged '+String(p.merged_at).slice(0,10):'')+str+'</span><div style="font-size:0.85rem;color:var(--text-secondary)">'+esc(p.title||'')+'</div></div>';
+    }).join('') : '<div class="no-prs">⚠️ No PRs found from this fork owner to upstream</div>'}
+    ${f.branches && f.branches.length ? '<details style="margin-top:8px"><summary style="font-size:0.85rem;padding:6px 8px;cursor:pointer">Branches ('+f.branches.length+')</summary><ul style="padding:8px;list-style:none">'+f.branches.map(b=>'<li style="margin:4px 0;font-family:monospace;font-size:0.85rem"><strong>'+esc(b.name)+'</strong> +'+b.ahead+'/-'+b.behind+' · '+b.files+' files</li>').join('')+'</ul></details>' : ''}
+    <div class="fork-actions">
+      <label><input type="checkbox" class="fork-check" data-fork="${esc(f.full_name)}" ${note.checked?'checked':''} onchange="saveNote('${esc(f.full_name)}')"> Further analysis needed</label>
+      <label style="opacity:0.6"><input type="checkbox" class="fork-exclude" data-fork="${esc(f.full_name)}" ${note.excluded?'checked':''} onchange="saveNote('${esc(f.full_name)}')"> Exclude from view</label>
+      <textarea class="fork-note" data-fork="${esc(f.full_name)}" placeholder="What to analyze further..." onchange="saveNote('${esc(f.full_name)}')">${esc(note.note)}</textarea>
+    </div>
+  </div>`;
+  // Set attributes for filtering
+  card.setAttribute('data-change', f._change || 'unchanged');
+  card.setAttribute('data-excluded', note.excluded ? 'true' : 'false');
+  if (note.excluded) card.classList.add('excluded');
+  detailsEl.appendChild(card);
+});
+
+function applyDetailFilter() {
+  const active = [...document.querySelectorAll('#changeFilter input:checked')].map(cb => cb.value);
+  const showExcluded = active.includes('excluded');
+  document.querySelectorAll('.detail-card').forEach(card => {
+    const change = card.getAttribute('data-change') || 'unchanged';
+    const isExcluded = card.getAttribute('data-excluded') === 'true';
+    if (isExcluded && !showExcluded) { card.style.display = 'none'; return; }
+    card.style.display = active.includes(change) ? '' : 'none';
+  });
+}
+
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+
+function saveNote(fork) {
+  var el = document.querySelector('.detail-card .detail-body .fork-check[data-fork="'+fork+'"]');
+  if (!el) return;
+  var card = el.closest('.detail-card');
+  var checked = card.querySelector('.fork-check').checked;
+  var excluded = card.querySelector('.fork-exclude').checked;
+  var note = card.querySelector('.fork-note').value;
+  var data = {};
+  try { data = JSON.parse(localStorage.getItem('fork-notes')||'{}'); } catch(e) { data = {}; }
+  data[fork] = {checked,excluded,note};
+  localStorage.setItem('fork-notes',JSON.stringify(data));
+  // Update card state immediately
+  card.setAttribute('data-excluded', excluded ? 'true' : 'false');
+  if (excluded) card.classList.add('excluded'); else card.classList.remove('excluded');
+  applyDetailFilter();
+  // Try server save
+  fetch('/save-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fork,checked,excluded,note})}).catch(()=>{});
+}
+
+// Load notes from localStorage on page load
+(function(){
+  try {
+    var raw = localStorage.getItem('fork-notes');
+    if (raw === '[object Object]') { localStorage.removeItem('fork-notes'); raw = null; }
+    var notes = JSON.parse(raw||'{}');
+    Object.entries(notes).forEach(([fork,n]) => {
+      var card = document.querySelector('.detail-card .detail-body .fork-check[data-fork="'+fork+'"]');
+      if (!card) return;
+      var c = card.closest('.detail-card');
+      var cb = c.querySelector('.fork-check');
+      var ex = c.querySelector('.fork-exclude');
+      var ta = c.querySelector('.fork-note');
+      if(cb) cb.checked = n.checked;
+      if(ex) { ex.checked = n.excluded; c.setAttribute('data-excluded', n.excluded ? 'true' : 'false'); if (n.excluded) c.classList.add('excluded'); else c.classList.remove('excluded'); }
+      if(ta) ta.value = n.note||'';
+    });
+    // Apply exclusion filter on load
+    var showExcludedCheckbox = document.querySelector('#changeFilter input[value="excluded"]');
+    if (showExcludedCheckbox && !showExcludedCheckbox.checked) applyDetailFilter();
+  } catch(e){}
+})();
+
+// Charts
+new Chart(document.getElementById("statusChart"),{
+  type:"doughnut",
+  data:{labels:["Identical","Behind","Ahead (Bot)","Ahead (Human)"],
+    datasets:[{data:[D.stats.identical,D.stats.behind,D.stats.aheadBot,D.stats.aheadHuman],
+    backgroundColor:["#6c757d","#ff9f1c","#adb5bd","#2ec4b6"],borderWidth:0}]},
+  options:{responsive:true,plugins:{legend:{position:"bottom"}}}
+});
+
+new Chart(document.getElementById("featureChart"),{
+  type:"bar",
+  data:{labels:hData.slice(0,20).map(x=>x[0]),datasets:[{data:hData.slice(0,20).map(x=>x[1]),backgroundColor:"#5e7ce2",borderRadius:6}]},
+  options:{responsive:true,indexAxis:"y",plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}
+});
+</script>
+</body>
+</html>
