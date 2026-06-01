@@ -146,6 +146,7 @@ export function generateStage2Report(
           created_at: p.created_at, merged_at: p.merged_at,
           reaction_count: p.reaction_count,
         })),
+        _merged_upstream: prs.length > 0 && prs.every(p => p.merged_at),
         branches: f?.branches?.filter((b) => b.ahead_by > 0).map((b) => ({
           name: b.branch, ahead: b.ahead_by, behind: b.behind_by, files: b.total_files,
         })) || [],

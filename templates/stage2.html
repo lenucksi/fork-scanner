@@ -57,7 +57,7 @@ tr:hover{background:var(--accent-light)}
 .fork-actions{display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap}
 .fork-actions label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem}
 .fork-actions textarea{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical}
-.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}
+.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}#matrixBody tr.merged-upstream{opacity:0.35}#matrixBody tr.merged-upstream:hover{opacity:0.6}
 @media(max-width:768px){.container{padding:12px}.stats-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -75,6 +75,12 @@ tr:hover{background:var(--accent-light)}
 
 <h2>Priority Matrix</h2>
 <p style="color:var(--text-secondary);margin-bottom:12px">Forks sorted by value × upstreamability</p>
+<div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem">
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="mergedFilter" onchange="toggleMergedFilter()">
+    <span style="opacity:0.5">⚲</span> Dim merged-upstream forks
+  </label>
+</div>
 <div style="overflow-x:auto"><table><thead><tr>
 <th>#</th><th>Fork</th><th>Title</th><th>Value</th><th>Upstr</th><th>Focus</th><th>PR</th><th>Tags</th>
 </tr></thead><tbody id="matrixBody"></tbody></table></div>
@@ -121,7 +127,8 @@ document.getElementById("matrixBody").innerHTML = (D.ordered || []).map((f,i) =>
   const o = pr.filter(p=>!p.merged_at&&p.state==='open').length;
   const prLabel = m ? m+' merged' : o ? o+' open' : pr.length ? pr.length+' closed' : 'No PR';
   const prClass = m?'pr-merged':o?'pr-open':pr.length?'pr-closed':'pr-none';
-  return `<tr>
+  const mergedUpstream = f.prs && f.prs.length > 0 && f.prs.every(p => p.merged_at);
+  return `<tr class="matrix-row${mergedUpstream ? ' merged-upstream' : ''}" data-merged="${mergedUpstream ? 'true' : 'false'}">
     <td>${i+1}</td>
     <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a></td>
     <td>${esc(f.title||'')}</td>
@@ -218,6 +225,13 @@ function applyDetailFilter() {
   });
 }
 
+function toggleMergedFilter() {
+  const dim = document.getElementById('mergedFilter').checked;
+  document.querySelectorAll('#matrixBody tr[data-merged="true"]').forEach(tr => {
+    tr.classList.toggle('merged-upstream', dim);
+  });
+}
+
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 
 function saveNote(fork) {
@@ -261,6 +275,9 @@ function saveNote(fork) {
     if (showExcludedCheckbox && !showExcludedCheckbox.checked) applyDetailFilter();
   } catch(e){}
 })();
+
+// Apply merged filter initial state
+toggleMergedFilter();
 
 // Charts
 new Chart(document.getElementById("statusChart"),{
