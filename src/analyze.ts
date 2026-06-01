@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { Fork, BranchCompare, ForkAnalysis } from "./utils/types.js";
@@ -9,7 +8,6 @@ export function analyze(
   forks: Fork[],
   results: BranchCompare[],
   outputDir: string,
-  forkChanges?: Map<string, { change: "new" | "updated" | "rewritten" | "unchanged"; new_commits: number; rewritten_commits: number }>,
 ): ForkAnalysis[] {
   const branchFreq: Record<string, number> = {};
   for (const r of results) {
@@ -35,34 +33,6 @@ export function analyze(
       ? mergeBases.sort((a, b) => b.ahead_by - a.ahead_by)[0].merge_base_sha.slice(0, 7)
       : "unknown";
 
-    // Aggregate change info from the changes map (per-branch) up to fork level
-    let change: "new" | "updated" | "rewritten" | "unchanged" | undefined;
-    let newCommits = 0;
-    let rewrittenCommits = 0;
-    if (forkChanges) {
-      // Collect per-branch changes for this fork
-      let hasRewrite = false;
-      let hasUpdate = false;
-      for (const [key, val] of forkChanges) {
-        if (key.startsWith(full_name + "/")) {
-          newCommits += val.new_commits;
-          rewrittenCommits += val.rewritten_commits;
-          if (val.change === "rewritten") hasRewrite = true;
-          else if (val.change === "updated" && val.new_commits > 0) hasUpdate = true;
-        }
-      }
-      // Also check direct fork entry (for new forks)
-      const direct = forkChanges.get(full_name);
-      if (direct) {
-        newCommits += direct.new_commits;
-        if (direct.change === "rewritten") hasRewrite = true;
-        if (direct.change === "updated") hasUpdate = true;
-      }
-      if (hasRewrite) change = "rewritten";
-      else if (newCommits > 0) change = "updated";
-      else change = "unchanged";
-    }
-
     summaries.push({
       full_name,
       owner: meta?.owner ?? full_name.split("/")[0],
@@ -74,9 +44,6 @@ export function analyze(
       branches,
       cluster_group: clusterSha,
       pushed_category: categorizePushed(meta?.pushed_at ?? ""),
-      _change: change,
-      _new_commits: newCommits > 0 ? newCommits : undefined,
-      _rewritten_commits: rewrittenCommits > 0 ? rewrittenCommits : undefined,
     });
   }
 

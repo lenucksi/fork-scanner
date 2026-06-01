@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 const { writeFileSync, mkdirSync, existsSync } = await import("fs");
 const { join, dirname } = await import("path");
 const { fileURLToPath } = await import("url");

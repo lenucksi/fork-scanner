@@ -1,17 +1,16 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Fork Analysis — Stage 1</title>
-<script src="chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
 :root{--bg:#f8f9fa;--surface:#fff;--text:#1a1a2e;--text-secondary:#555;--border:#dee2e6;--accent:#4361ee;--accent-light:#eef0ff;--green:#2ec4b6;--orange:#ff9f1c;--purple:#7209b7}
 @media(prefers-color-scheme:dark){:root{--bg:#0f0f23;--surface:#1a1a2e;--text:#eaeaea;--text-secondary:#9ca3af;--border:#2d2d44;--accent:#5e7ce2;--accent-light:#1a1a3e}}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
-.container{max-width:1400px;margin:0 auto;padding:calc(24px + 48px) 24px 24px}
+.container{max-width:1400px;margin:0 auto;padding:24px}
 h1{font-size:2rem;margin-bottom:4px}
 h2{font-size:1.4rem;margin:32px 0 16px;border-bottom:2px solid var(--accent);padding-bottom:8px}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:32px}
@@ -28,23 +27,16 @@ tr:hover{background:var(--accent-light)}
 .badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.75rem;background:var(--accent-light);color:var(--accent)}
 .pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:0.78rem;font-weight:600}
 .pill-human{background:#d4edda;color:#155724}.pill-bot{background:#e2e3e5;color:#383d41}
-.pill-new{background:#d4edda;color:#155724;border:1px solid #2ec4b6}
-.pill-updated{background:#fff3cd;color:#856404;border:1px solid #ff9f1c}
-.pill-rewritten{background:#f8d7da;color:#721c24;border:1px solid #e83e8c}
-.row-new{border-left:4px solid #2ec4b6 !important}
-.row-updated{border-left:4px solid #ff9f1c !important}
-.row-rewritten{border-left:4px solid #e83e8c !important}
 details{margin:8px 0}
 details summary{cursor:pointer;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-weight:600}
 details[open] summary{border-radius:8px 8px 0 0}
 details .body{background:var(--surface);border:1px solid var(--border);border-top:none;padding:12px;border-radius:0 0 8px 8px}
 </style></head>
 <body>
-{{NAV_BAR}}
 <div class="container">
 
 <h1>Fork Analysis — Stage 1</h1>
-<p style="color:var(--text-secondary);margin-bottom:24px">{{RUN_TYPE}} · {{TOTAL_FORKS}} forks · {{REPO}} · {{DATE}}</p>
+<p style="color:var(--text-secondary);margin-bottom:24px">{{TOTAL_FORKS}} forks &middot; {{REPO}} &middot; {{DATE}}</p>
 
 <div class="stats-grid" id="statsGrid"></div>
 <div class="charts-row">
@@ -54,20 +46,6 @@ details .body{background:var(--surface);border:1px solid var(--border);border-to
 
 <h2>Interesting Forks</h2>
 <p style="color:var(--text-secondary);margin-bottom:12px" id="interestingCount"></p>
-<div id="changeFilter" style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem">
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-    <input type="checkbox" value="new" checked onchange="applyFilter()"> <span class="pill pill-new">New</span>
-  </label>
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-    <input type="checkbox" value="updated" checked onchange="applyFilter()"> <span class="pill pill-updated">Updated</span>
-  </label>
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-    <input type="checkbox" value="rewritten" checked onchange="applyFilter()"> <span class="pill pill-rewritten">Rewritten</span>
-  </label>
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-    <input type="checkbox" value="unchanged" checked onchange="applyFilter()"> <span>Unchanged</span>
-  </label>
-</div>
 <div style="overflow-x:auto"><table><thead><tr>
 <th>Fork</th><th>Pushed</th><th>Branches</th><th>Ahead</th><th>Behind</th><th>Files</th><th>Lines</th>
 </tr></thead><tbody id="forkTableBody"></tbody></table></div>
@@ -86,34 +64,18 @@ document.getElementById("statsGrid").innerHTML = Object.entries(D.stats).map(([k
 
 document.getElementById("interestingCount").textContent = D.interesting.length + " forks with human-authored changes ahead of upstream";
 
-function changeBadge(change, newCount, rewrittenCount) {
-  if (change === "new") return `<span class="pill pill-new">New</span>`;
-  if (change === "updated" && newCount) return `<span class="pill pill-updated">▲ ${newCount} new</span>`;
-  if (change === "rewritten") return `<span class="pill pill-rewritten">⚠ Rewritten${rewrittenCount ? " ("+rewrittenCount+")" : ""}</span>`;
-  return "";
-}
-
 document.getElementById("forkTableBody").innerHTML = D.interesting.map(f => {
   const allFiles = f.branches.flatMap(b => b.files || []);
   const adds = allFiles.reduce((s,f2) => s+(f2.additions||0),0);
   const dels = allFiles.reduce((s,f2) => s+(f2.deletions||0),0);
-  const rowCls = f._change === "new" ? "row-new" : f._change === "updated" ? "row-updated" : f._change === "rewritten" ? "row-rewritten" : "";
-  return `<tr class="${rowCls}" data-change="${f._change || 'unchanged'}">
-    <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a> ${changeBadge(f._change, f._new_commits, f._rewritten_commits)}</td>
+  return `<tr>
+    <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a></td>
     <td>${f.pushed_at ? new Date(f.pushed_at).toISOString().slice(0,10) : "?"}</td>
     <td>${f.branches.map(b => `<span style="font-family:monospace;font-size:0.8rem">${esc(b.branch)}</span> <span class="badge">+${b.ahead_by}/-${b.behind_by}</span>`).join(" ")}</td>
     <td>+${f.max_ahead}</td><td>-${f.max_behind}</td>
     <td>${allFiles.length}</td>
     <td>+${adds}/-${dels}</td></tr>`;
 }).join("");
-
-function applyFilter() {
-  const active = [...document.querySelectorAll('#changeFilter input:checked')].map(cb => cb.value);
-  document.querySelectorAll('#forkTableBody tr').forEach(row => {
-    const change = row.dataset.change || 'unchanged';
-    row.style.display = active.includes(change) ? '' : 'none';
-  });
-}
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 

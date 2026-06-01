@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 const BOT_PATTERNS = [
   /\[bot\]$/i,
   /^dependabot/i, /^renovate/i, /^snyk/i, /^github-actions/i,
@@ -13,8 +12,8 @@ const BOT_PATTERNS = [
 ];
 
 export function isBotCommit(commit: any): boolean {
-  const login = commit.author?.login || commit.author_login || "";
-  const name = commit.commit?.author?.name || commit.author_name || "";
+  const login = commit.author?.login || "";
+  const name = commit.commit?.author?.name || "";
   return BOT_PATTERNS.some((p) => p.test(login) || p.test(name));
 }
 

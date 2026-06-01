@@ -25,7 +25,6 @@ npx fork-scan MrLesk/Backlog.md --serve
 - [Usage](#usage)
 - [Modes](#modes)
   - [Stage 1 — Deterministic Scan](#stage-1--deterministic-scan)
-  - [Incremental Scan](#incremental-scan-stage-1-re-scan)
   - [Stage 2 — Deep Analysis](#stage-2--deep-analysis)
   - [Interactive Mode](#interactive-mode)
   - [GitHub Pages Export](#github-pages-export)
@@ -41,13 +40,13 @@ npx fork-scan MrLesk/Backlog.md --serve
 
 ```bash
 # Global install
-npm install -g @lenucksi/fork-scanner
+npm install -g @backlog/fork-scanner
 
 # Or run directly
-npx @lenucksi/fork-scanner MrLesk/Backlog.md
+npx @backlog/fork-scanner MrLesk/Backlog.md
 
 # From source
-git clone https://github.com/lenucksi/fork-scanner.git
+git clone https://github.com/your-org/fork-scanner.git
 cd fork-scanner
 bun install
 bun src/index.ts MrLesk/Backlog.md
@@ -84,10 +83,7 @@ fork-scan MrLesk/Backlog.md --gh-pages
 fork-scan MrLesk/Backlog.md -o ./reports/my-scan
 
 # Versioned output (keeps previous runs)
-fork-scan MrLesk/Backlog.md --versioned
-
-# Incremental re-scan (only changed forks)
-fork-scan MrLesk/Backlog.md -o ./scan-data --incremental --serve
+fork-scan MrLesk/Backlog.md --version
 ```
 
 ## Modes
@@ -116,36 +112,6 @@ scan-output/
 └── state.json               # Resumable scan state
 ```
 
-### Incremental Scan (Stage 1 re-scan)
-
-Re-scan only forks that changed since the last scan. Faster and produces change-annotated reports.
-
-```
-fork-scan MrLesk/Backlog.md -o ./my-scan --incremental
-```
-
-**What it does:**
-
-1. Loads existing `forks.json` + `compare.jsonl` from the output directory
-2. Fetches fresh fork list, compares `pushed_at` timestamps
-3. Identifies **new** (never before seen), **updated** (pushed_at changed), and **unchanged** forks
-4. Re-scans only new + updated forks with full upstream branch compare
-5. SHA-to-SHA cross-reference flags `_is_new` on individual commits
-6. Detects force-pushes via changes to `merge_base_sha` + vanished tip SHAs → `rewritten` label
-7. Merges old + new compare data in memory, preserving unchanged entries
-8. Runs analysis with change context: `_change`, `_new_commits`, `_rewritten_commits`
-
-**Change badges in report:**
-- 🟢 **New** row (green left border) — fork appeared since last scan
-- 🟡 **Updated** row (amber) — new commits detected on existing fork
-- 🔴 **Rewritten** row (red, striped) — force-push replaced the branch history
-
-Combine with `--prepare-deep` and `--serve`:
-
-```bash
-fork-scan MrLesk/Backlog.md -o ./scan-data --incremental --prepare-deep --deep-limit 30 --serve
-```
-
 ### Stage 2 — Deep Analysis
 
 Adds AI-powered classification on top of Stage 1.
@@ -157,8 +123,6 @@ Adds AI-powered classification on top of Stage 1.
 - Feature heatmap (what's built most often in the community)
 - PR status per fork (merged / open / closed + reaction timeline)
 - Interactive checkboxes + notes per fork (persisted to `notes.json`)
-- Incremental update timeline per fork (when re-analyzed via `--incremental`):
-  `_updates[]` entries show timestamped paragraphs for each analysis round
 
 ### Interactive Mode
 
@@ -243,9 +207,9 @@ The CLI makes direct Anthropic API calls (parallel, rate-limited) for the same c
 ├── report-stage2.html           # Stage 2: deep analysis, priority matrix
 ├── report-stage1-v1.html        # Versioned (with --version flag)
 ├── report-stage2-v1.html
-├── forks.json                   # Raw fork metadata (incl. pushed_at for change detection)
-├── compare.jsonl                # Branch-by-branch comparison results (incl. _is_new commit flags)
-├── analysis.json                # Filtered, clustered, bot-detected (+ _change, _new_commits, _rewritten_commits)
+├── forks.json                   # Raw fork metadata
+├── compare.jsonl                # Branch-by-branch comparison results
+├── analysis.json                # Filtered, clustered, bot-detected
 ├── prs.json                     # PR matching + reactions
 ├── state.json                   # Resumable scan state
 ├── notes.json                   # User notes (from serve.ts save-note)
@@ -279,10 +243,6 @@ CLI entry (src/index.ts)
   ├── src/deep.ts         Deep input prep + merge
   │
   ├── src/report.ts       HTML report generator
-  │
-  ├── src/utils/state.ts  Incremental merge, SHA index, load/save helpers
-  │   └── utils/bot.ts    Bot author pattern matching
-  │
   │   └── templates/      HTML templates with {{PLACEHOLDER}} substitution
   │       ├── stage1.html
   │       ├── stage2.html
@@ -307,29 +267,6 @@ This means:
 - No server-side rendering needed
 - Templates can be edited independently of source code
 - Data is machine-readable in the page source
-
-## Testing
-
-Deterministic functions (change detection, merge logic, analysis, bot filtering) are tested with synthetic fixtures derived from real Shortwave data.
-
-```bash
-# Run all tests
-bun test
-
-# Run with coverage
-bun test --coverage
-```
-
-Test files live in `src/__tests__/`:
-
-| File | Tests |
-|------|-------|
-| `state.test.ts` | `mergeIncrementalCompare`, `buildShaIndex` |
-| `scan.test.ts` | `detectChanges`, `buildOldShaMap` |
-| `analyze.test.ts` | `analyze` with change injection |
-| `bot.test.ts` | `isBotCommit` pattern matching |
-
-Fixtures in `src/__tests__/fixtures/` contain synthetic fork sets, compare entries, and analysis data based on real Shortwave scan outputs.
 
 ## Required Permissions
 

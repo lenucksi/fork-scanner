@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
@@ -39,19 +38,20 @@ function getPushedDist(forks: Fork[]): Record<string, number> {
 
 export function generateStage1Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
-  outputDir: string, versioned: boolean, repo: string,
+  outputDir: string, versioned: boolean,
 ) {
   const stats = getStats(forks, analysis, allResults);
   const pushedDist = getPushedDist(forks);
   const interesting = analysis.filter((s) => !s.is_bot_only && s.max_ahead > 0);
   const pushedLabels = Object.keys(PUSHED_LABELS).map((k) => PUSHED_LABELS[k]);
   const pushedValues = Object.keys(PUSHED_LABELS).map((k) => pushedDist[k] || 0);
+  const repo = allResults.length > 0 ? allResults[0].full_name.split("/")[0] + "/..." : "?";
+
   const data = {
     stats: { total: forks.length, identical: stats.identical, behind: stats.behind, aheadBot: stats.aheadBot, aheadHuman: stats.aheadHuman },
     pushedLabels, pushedValues,
     interesting: interesting.map((s) => ({
       full_name: s.full_name, pushed_at: s.pushed_at, max_ahead: s.max_ahead, max_behind: s.max_behind,
-      _change: s._change, _new_commits: s._new_commits, _rewritten_commits: s._rewritten_commits,
       branches: s.branches.map((b) => ({ branch: b.branch, ahead_by: b.ahead_by, behind_by: b.behind_by, files: b.files })),
     })),
   };
@@ -59,14 +59,8 @@ export function generateStage1Report(
   let html = loadTemplate("stage1");
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
-  const runType1 = interesting.some((f: ForkAnalysis) => f._change !== undefined) ? "inc" : "full";
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
-  html = html.replace("{{RUN_TYPE}}", runType1 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
-
-  const runType = runType1;
-  const changeCount = interesting.filter((f: ForkAnalysis) => f._change !== undefined && f._change !== "unchanged").length;
-  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
 
   const fn = versioned ? "report-stage1-v1.html" : "report-stage1.html";
   writeFileSync(join(outputDir, fn), html);
@@ -77,9 +71,10 @@ export function generateStage1Report(
 export function generateStage2Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
   outputDir: string, deepMap: Map<string, DeepAnalysis>, prMap: Map<string, PRInfo[]>,
-  versioned: boolean, userNotes: any = {}, repo: string = "?",
+  versioned: boolean, userNotes: any = {},
 ) {
   const stats = getStats(forks, analysis, allResults);
+  const repo = allResults.length > 0 ? allResults[0].full_name.split("/")[0] + "/..." : "?";
 
   const deepEntries = [...deepMap.entries()];
   const valueOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
@@ -92,9 +87,7 @@ export function generateStage2Report(
         full_name: name, title: r.title, description: r.description,
         tags: r.tags, value: r.value_assessment, upstream: r.upstreamability,
         focus: r.main_focus, has_code: r.has_code_changes,
-        _updates: r._updates,
-        _change: f?._change || "unchanged",
-        max_ahead: f?.max_ahead ?? 0, max_behind: f?.max_behind ?? 0, pushed_at: f?.pushed_at ?? "",
+        max_ahead: f?.max_ahead ?? 0, pushed_at: f?.pushed_at ?? "",
         files: allFiles.length,
         adds: allFiles.reduce((s, f2) => s + (f2.additions || 0), 0),
         dels: allFiles.reduce((s, f2) => s + (f2.deletions || 0), 0),
@@ -121,13 +114,11 @@ export function generateStage2Report(
   }
   const sortedFeatures = Object.entries(heatmap).sort((a, b) => b[1] - a[1]);
 
-  const interestingCount = analysis.filter((s: ForkAnalysis) => !s.is_bot_only && s.max_ahead > 0).length;
   const data = {
     stats: {
       total: forks.length, identical: stats.identical, behind: stats.behind,
       aheadBot: stats.aheadBot, aheadHuman: stats.aheadHuman,
       deepAnalyzed: deepEntries.length,
-      interestingForks: interestingCount,
       highValue: deepEntries.filter(([, r]) => r.value_assessment === "high").length,
     },
     ordered, heatmap: sortedFeatures, forkCount: deepEntries.length,
@@ -137,14 +128,8 @@ export function generateStage2Report(
   let html = loadTemplate("stage2");
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
-  const runType2 = ordered.some((f: any) => f._change && f._change !== "unchanged") ? "inc" : "full";
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
-  html = html.replace("{{RUN_TYPE}}", runType2 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
-
-  const runType = runType2;
-  const changeCount = ordered.filter((f: any) => f._change && f._change !== "unchanged").length;
-  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
 
   const fn = versioned ? "report-stage2-v1.html" : "report-stage2.html";
   writeFileSync(join(outputDir, fn), html);
@@ -153,38 +138,8 @@ export function generateStage2Report(
 }
 
 export function generateLanding(reports: any[], outputDir: string) {
-  // Sort by timestamp descending, group by stage, number sequentially
-  const grouped = new Map<string, { name: string; file: string; timestamp: string; stage: string; }[]>();
-  for (const r of reports) {
-    const stage = r.stage || ((r.file || "").includes("stage2") ? "Stage 2" : "Stage 1");
-    if (!grouped.has(stage)) grouped.set(stage, []);
-    grouped.get(stage)!.push(r);
-  }
-  for (const [, group] of grouped) {
-    group.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
-  }
-
-  // Flatten: all stages interleaved, newest first
-  const flat = [...grouped.entries()]
-    .sort((a, b) => {
-      const aMax = a[1][0]?.timestamp || "";
-      const bMax = b[1][0]?.timestamp || "";
-      return bMax.localeCompare(aMax);
-    })
-    .flatMap(([stage, items]) =>
-      items.map((r, i) => ({
-        ...r,
-        stage,
-        seq: items.length > 1 ? i + 1 : undefined,
-      }))
-    );
-
   let html = loadTemplate("landing");
-  // Inject nav bar for static export (gh-pages) - no version dropdown
-  const navTmpl = readFileSync(join(TEMPLATE_DIR, "nav.html"), "utf-8");
-  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
-  html = html.replace("{{NAV_BAR}}", navHtml);
-  html = html.replace("{{REPOS_JSON}}", JSON.stringify(flat));
+  html = html.replace("{{REPOS_JSON}}", JSON.stringify(reports));
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
   writeFileSync(join(outputDir, "index.html"), html);
   console.log("Landing page: " + join(outputDir, "index.html"));

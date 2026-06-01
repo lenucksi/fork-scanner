@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { apiFetch } from "./utils/api.js";
