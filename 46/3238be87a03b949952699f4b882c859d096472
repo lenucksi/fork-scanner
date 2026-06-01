@@ -1,0 +1,21 @@
+src/config.ts
+  s_c463e112d7613e::t_2b62e65ab4f13b 11,15-20
+src/utils/api.ts
+  s_c463e112d7613e::t_fc6dc56746bd02 2,9,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "463238be87a03b949952699f4b882c859d096472",
+  "prompts": {},
+  "sessions": {
+    "s_c463e112d7613e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_18f334bd8ffeoA3wW8hyAwsDNC",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Lenucksi <lenucksi@users.noreply.github.com>"
+    }
+  }
+}
