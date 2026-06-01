@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { GITHUB_TOKEN } from "../config.js";
 
 const API_BASE = "https://api.github.com";

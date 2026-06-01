@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+// SPDX-License-Identifier: AGPL-3.0-only
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 import type { ForkAnalysis, DeepAnalysis, DeepInput } from "./utils/types.js";
 
@@ -98,20 +99,23 @@ export function mergeDeepResults(
   deepOutputDir: string,
 ): Map<string, DeepAnalysis> {
   const result = new Map<string, DeepAnalysis>();
+  const entryMtimes = new Map<string, string>();
   const dir = deepOutputDir || join(deepOutputDir, "..", "deep-output");
 
   if (existsSync(dir)) {
     for (let i = 1; i <= 20; i++) {
       const fp = join(dir, "batch" + i + ".json");
       if (existsSync(fp)) {
+        const batchMtime = statSync(fp).mtime.toISOString();
         const batch: DeepAnalysis[] = JSON.parse(readFileSync(fp, "utf-8"));
         for (const r of batch) {
           // Preserve _updates history: if fork already has an entry,
           // push the old entry's data into _updates before overwriting
           const existing = result.get(r.full_name);
           if (existing) {
+            const oldMtime = entryMtimes.get(r.full_name) || batchMtime;
             const update = {
-              date: new Date().toISOString(),
+              date: oldMtime,
               change: "updated" as "new" | "updated" | "rewritten",
               new_commits: r._new_commits || 0,
               analysis: existing.description,
@@ -122,6 +126,7 @@ export function mergeDeepResults(
             r._updates = [...previousUpdates, update];
           }
           result.set(r.full_name, r);
+          entryMtimes.set(r.full_name, batchMtime);
         }
       }
     }

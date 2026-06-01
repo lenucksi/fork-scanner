@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect } from "bun:test";
 import { buildShaIndex, mergeIncrementalCompare } from "../utils/state.js";
 import type { BranchCompare, CommitInfo } from "../utils/types.js";

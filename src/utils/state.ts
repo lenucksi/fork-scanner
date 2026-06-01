@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 

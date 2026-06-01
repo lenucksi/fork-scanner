@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { test, expect } from "@playwright/test";
 
 test.describe("Nav bar and version dropdown", () => {

@@ -1,6 +1,14 @@
 {
-  "name": "@backlog/fork-scanner",
+  "name": "@lenucksi/fork-scanner",
   "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lenucksi/fork-scanner.git"
+  },
   "type": "module",
   "bin": {
     "fork-scan": "./dist/index.js"
@@ -10,12 +18,16 @@
     "build": "bun run update-vendors && bun build src/index.ts --outdir dist --target bun",
     "update-vendors": "bun scripts/update-vendors.ts",
     "prepublish": "bun run build",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "test:e2e": "npx playwright test --config=playwright.config.ts",
+    "serve": "bun run src/index.ts --output ./scan-output --serve",
+    "dev": "bun --watch run src/index.ts --output ./scan-output --serve"
   },
   "dependencies": {
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/bun": "latest",
     "@types/yargs": "^17.0.33",
     "typescript": "^5.7.0"

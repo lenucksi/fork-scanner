@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 const BOT_PATTERNS = [
   /\[bot\]$/i,
   /^dependabot/i, /^renovate/i, /^snyk/i, /^github-actions/i,

@@ -14,44 +14,116 @@ function findFreePort(start: number): number {
       "ss -tlnp 2>/dev/null | awk '{print $4}' | grep -oP '\\d+$'",
       { encoding: "utf-8" }
     );
-    const used = new Set(raw.trim().split("\n").map(Number).filter(Boolean));
-    let p = start;
-    while (used.has(p)) p++;
-    return p;
+    const used = new Set(raw.trim().split("\n").filter(Boolean).map(Number));
+    let port = start;
+    while (used.has(port)) port++;
+    return port;
   } catch {
     return start;
   }
 }
 
-/** Generate navigation bar with version dropdown from available reports */
+const REPORT_PATTERN = /^report-stage\d+-(full|inc)-\d{4}-\d{2}-\d{2}(-from-\d{4}-\d{2}-\d{2})?\.html$/;
+
+function parseMetaTimestamp(fp: string): string {
+  try {
+    const content = readFileSync(fp, "utf-8");
+    const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+    if (m) {
+      const parts = m[1].split(",");
+      return parts[2] || "";
+    }
+  } catch {}
+  return "";
+}
+
+function parseTimestampFromFilename(filename: string): string {
+  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] + "T00:00:00.000Z" : "";
+}
+
 function generateNavBar(outputDir: string, currentFile?: string): string {
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
   const reports: string[] = [];
   try {
     for (const f of readdirSync(outputDir)) {
-      if (/^report-(stage|stufe)\d+(-v\d+)?\.html$/.test(f)) {
+      if (REPORT_PATTERN.test(f)) {
         reports.push(f);
       }
     }
   } catch {}
   reports.sort((a, b) => {
+    const ta = parseMetaTimestamp(join(outputDir, a)) || parseTimestampFromFilename(a);
+    const tb = parseMetaTimestamp(join(outputDir, b)) || parseTimestampFromFilename(b);
+    if (ta && tb) return tb.localeCompare(ta);
     try { return statSync(join(outputDir, b)).mtimeMs - statSync(join(outputDir, a)).mtimeMs; }
     catch { return 0; }
   });
+
+  let latestStage1 = "report-stage1.html";
+  let latestStage2 = "report-stage2.html";
+  for (const r of reports) {
+    const stage = (r.match(/^report-stage(\d+)/) || [])[1];
+    if (stage === "1" && latestStage1 === "report-stage1.html") latestStage1 = r;
+    if (stage === "2" && latestStage2 === "report-stage2.html") latestStage2 = r;
+  }
+
+  const currentStage = currentFile ? (currentFile.match(/^report-stage(\d+)/) || [])[1] : "";
   let options = "";
   for (const r of reports) {
-    const label = r.replace(/\.html$/, "").replace("report-", "").replace("stufe", "Stage ");
+    const fp = join(outputDir, r);
+    const rStage = (r.match(/^report-stage(\d+)/) || [])[1];
+    if (currentStage && rStage !== currentStage) continue;
+
+    let runLabel = "", changeCount = 0;
+    try {
+      const content = readFileSync(fp, "utf-8");
+      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+      if (m) {
+        const parts = m[1].split(",");
+        runLabel = parts[0] === "inc" ? "[Inc]" : "[Full]";
+        changeCount = parseInt(parts[1], 10) || 0;
+      }
+    } catch {}
+
+    let dateStr = "";
+    const ts = parseMetaTimestamp(fp);
+    if (ts) {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mi = String(d.getMinutes()).padStart(2, "0");
+        dateStr = mm + "-" + dd + " " + hh + ":" + mi;
+      }
+    }
+    if (!dateStr) {
+      try {
+        const d = statSync(fp).mtime;
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mi = String(d.getMinutes()).padStart(2, "0");
+        dateStr = mm + "-" + dd + " " + hh + ":" + mi;
+      } catch {}
+    }
+
+    const parts2 = [runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean);
+    const label = parts2.join(" ");
     const selected = r === currentFile ? " selected" : "";
-    options += '<option value="/' + r + '"' + selected + ">" + label + "</option>";
+    options += '<option value="/' + r + '"' + selected + ">" + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }
-  return navTmpl.replace("{{VERSION_OPTIONS}}", options);
+  let result = navTmpl.replace("{{VERSION_OPTIONS}}", options);
+  result = result.replace("{{STAGE1_LINK}}", latestStage1);
+  result = result.replace("{{STAGE2_LINK}}", latestStage2);
+  return result;
 }
 
 export function serve(outputDir: string, port: number, projectRoot?: string) {
   const actualPort = findFreePort(port);
   const NOTES_FILE = join(outputDir, "notes.json");
 
-  // Copy vendor JS/CSS for offline /docs page
   try {
     const templatesDir = join(__dirname, "..", "templates");
     for (const f of ["marked.min.js", "highlight.min.js", "github-dark.min.css", "chart.umd.min.js"]) {
@@ -126,21 +198,25 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
       if (url.pathname === "/") {
         const { statSync } = await import("fs");
         const files = await Array.fromAsync(new Bun.Glob("report-*.html").scan({ cwd: outputDir }));
-        const map: Record<string, string> = { stufe2: "Stage 2", stufe1: "Stage 1", stage2: "Stage 2", stage1: "Stage 1" };
-        
+        const map: Record<string, string> = { stage2: "Stage 2", stage1: "Stage 1" };
+
         const reports = files
-          .filter(f => !f.includes("-v0"))
+          .filter(f => REPORT_PATTERN.test(f) && !f.includes("-v0"))
           .map(f => {
             const stage = Object.entries(map).find(([k]) => f.includes(k))?.[1] || "Report";
-            let timestamp = "";
-            try {
-              const mtime = statSync(join(outputDir, f)).mtime;
-              timestamp = mtime.toISOString();
-            } catch {}
+            let timestamp = parseMetaTimestamp(join(outputDir, f));
+            if (!timestamp) {
+              timestamp = parseTimestampFromFilename(f);
+            }
+            if (!timestamp) {
+              try {
+                const mtime = statSync(join(outputDir, f)).mtime;
+                timestamp = mtime.toISOString();
+              } catch {}
+            }
             return { name: stage, file: f, stage, timestamp };
           });
 
-        // Render via landing template (same as generateLanding)
         const templatesDir = join(__dirname, "..", "templates");
         const tmplPath = join(templatesDir, "landing.html");
         let html = existsSync(tmplPath) ? readFileSync(tmplPath, "utf-8") : "";
@@ -151,21 +227,35 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
           html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
           return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
         }
-        // Fallback to simple listing
-        const links = reports.map(r => `<a href="/${r.file}" class="report-link">${r.name}${r.timestamp ? " (" + r.timestamp.slice(0, 10) + ")" : ""}</a>`).join("");
+        const links = reports.map(r => `<a href="/` + r.file + `" class="report-link">` + r.name + (r.timestamp ? " (" + r.timestamp.slice(0, 10) + ")" : "") + `</a>`).join("");
         const page = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Fork Scanner Reports</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0f23;color:#eaeaea;line-height:1.7;max-width:900px;margin:0 auto;padding:48px 24px;text-align:center}h1{font-size:2.5rem;margin-bottom:8px}.subtitle{color:#9ca3af;margin-bottom:48px}.links{display:flex;flex-direction:column;gap:12px;align-items:center}.report-link{display:inline-block;padding:16px 48px;background:#1a1a3e;border:1px solid #2d2d44;border-radius:12px;color:#5e7ce2;text-decoration:none;font-size:1.1rem;font-weight:600;transition:border-color .2s;min-width:300px}.report-link:hover{border-color:#5e7ce2}.nav{display:flex;gap:16px;justify-content:center;margin-top:48px}.nav a{color:#5e7ce2;text-decoration:none;font-weight:600;padding:8px 16px;background:#1a1a3e;border-radius:8px}</style></head><body><h1>🔬 Fork Scanner Reports</h1><div class="subtitle">' + outputDir.split("/").pop() + '</div><div class="links">' + links + '</div><div class="nav"><a href="/docs">Docs</a></div></body></html>';
         return new Response(page, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
       }
 
       let filePath = join(outputDir, url.pathname);
-      // Smart fallback: stage ↔ stufe naming
       if (!existsSync(filePath)) {
-        const m = url.pathname.match(/report-(?:stage|stufe)(\d+)/);
+        const m = url.pathname.match(/report-stage(\d+)/);
         const num = m ? m[1] : "1";
-        const candidates = ["report-stufe" + num + ".html", "report-stage" + num + ".html", "report-stufe2.html", "report-stage2.html", "report-stufe1.html", "report-stage1.html"];
+        const candidates = [
+          "report-stage" + num + "-full-*.html",
+          "report-stage" + num + "-inc-*.html",
+          "report-stage" + num + ".html",
+          "report-stufe" + num + ".html",
+        ];
         for (const c of candidates) {
-          filePath = join(outputDir, c);
-          if (existsSync(filePath)) break;
+          if (c.includes("*")) {
+            for (const f of readdirSync(outputDir)) {
+              const pat = new RegExp("^" + c.replace(/\*/g, ".*") + "$");
+              if (pat.test(f)) {
+                filePath = join(outputDir, f);
+                break;
+              }
+            }
+            if (existsSync(filePath)) break;
+          } else {
+            filePath = join(outputDir, c);
+            if (existsSync(filePath)) break;
+          }
         }
       }
       if (!existsSync(filePath)) return new Response("Not Found", { status: 404 });
@@ -173,7 +263,6 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
       const ext = filePath.split(".").pop() || "";
       const types: Record<string, string> = { html: "text/html;charset=utf-8", js: "application/javascript", css: "text/css", json: "application/json" };
       let body = readFileSync(filePath);
-      // Inject navigation bar
       if (ext === "html") {
         let str = body.toString();
         if (str.includes("{{NAV_BAR}}")) {
@@ -181,12 +270,11 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
           body = Buffer.from(str);
         }
       }
-      // Inject notes into static HTML reports so old files show checkboxes + notes
-      if (ext === "html" && (url.pathname.includes("report-stufe") || url.pathname.includes("report-stage"))) {
+      if (ext === "html" && url.pathname.includes("report-stage")) {
         try {
           const notes = loadNotes();
           if (Object.keys(notes).length > 0) {
-            const json = JSON.stringify(notes).replace(/</g, "\u003c");
+            const json = JSON.stringify(notes).replace(/</g, "\\u003c");
             const str = body.toString().replace('</body>', '<script>try{localStorage.setItem("fork-notes",' + json + ');}catch(e){}</script></body>');
             body = Buffer.from(str);
           }
@@ -199,13 +287,28 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
   console.log("\n  Fork Scanner Report Server");
   console.log("  " + "-".repeat(30));
   console.log("  Landing: http://localhost:" + actualPort);
-  console.log("  Stage 1: http://localhost:" + actualPort + "/report-stage1.html");
-  console.log("  Stage 2: http://localhost:" + actualPort + "/report-stage2.html");
-  console.log("  Docs:    http://localhost:" + actualPort + "/docs");
-  console.log("  Notes:   " + NOTES_FILE + "\n");
+  console.log("  Stage 1: http://localhost:" + actualPort + "/" + latestStage1());
+  console.log("  Stage 2: http://localhost:" + actualPort + "/" + latestStage2());
+
+  function latestStage1(): string {
+    try {
+      for (const f of readdirSync(outputDir)) {
+        if (/^report-stage1-(full|inc)-\d{4}-\d{2}-\d{2}/.test(f)) return f;
+      }
+    } catch {}
+    return "report-stage1.html";
+  }
+
+  function latestStage2(): string {
+    try {
+      for (const f of readdirSync(outputDir)) {
+        if (/^report-stage2-(full|inc)-\d{4}-\d{2}-\d{2}/.test(f)) return f;
+      }
+    } catch {}
+    return "report-stage2.html";
+  }
 }
 
-/** Sort reports: group by stage, newest first, number sequentially */
 function sortReports(reports: { name: string; file: string; timestamp: string; stage: string }[]): any[] {
   const grouped = new Map<string, typeof reports>();
   for (const r of reports) {

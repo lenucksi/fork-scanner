@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { generateLanding } from "./report.js";
 import { dirname } from "path";
 const __dirname = dirname(new URL(import.meta.url).pathname);
+
+const REPORT_PATTERN = /^report-stage\d+-(full|inc)-\d{4}-\d{2}-\d{2}(-from-\d{4}-\d{2}-\d{2})?\.html$/;
+
+function parseMetaTagTimestamp(fp: string): string {
+  try {
+    const content = readFileSync(fp, "utf-8");
+    const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+    if (m) {
+      const parts = m[1].split(",");
+      return parts[2] || "";
+    }
+  } catch {}
+  return "";
+}
+
+function parseTimestampFromFilename(filename: string): string {
+  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] + "T00:00:00.000Z" : "";
+}
 
 export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: string, stripNotes: boolean = true) {
   if (subpath) ghPagesDir = join(ghPagesDir, subpath);
@@ -12,14 +31,13 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
 
   // Build version dropdown options from reports in the output directory
   let optionsHtml = "";
-  const reportPattern = /^report-stage\d+(-v\d+)?\.html$/;
   const allReports: string[] = [];
   try {
     for (const f of readdirSync(outputDir)) {
-      if (reportPattern.test(f)) allReports.push(f);
+      if (REPORT_PATTERN.test(f)) allReports.push(f);
     }
   } catch {}
-  allReports.sort();
+  allReports.sort((a, b) => b.localeCompare(a));
 
   for (const r of allReports) {
     const fp = join(outputDir, r);
@@ -34,16 +52,47 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
         changeCount = parseInt(parts[1], 10) || 0;
       }
     } catch {}
-    const label = [runLabel, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
-    // For the nav dropdown, use a relative path prefix
-    const relativePath = subpath ? join(subpath, r) : r;
-    optionsHtml += '<option value="/' + relativePath + '">' + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
+    let dateStr = "";
+    const ts = parseMetaTagTimestamp(fp);
+    if (ts) {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        dateStr = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      }
+    }
+    if (!dateStr) {
+      try {
+        const st = statSync(fp);
+        const d = st.mtime;
+        dateStr = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      } catch {}
+    }
+    const label = [runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
+    optionsHtml += '<option value="' + r + '">' + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }
 
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
-  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", optionsHtml);
 
-  for (const file of ["report-stage1.html", "report-stage2.html", "report-stage1-v1.html", "report-stage2-v1.html"]) {
+  // Determine latest file per stage for nav links
+  let stage1Latest = "report-stage1.html";
+  let stage2Latest = "report-stage2.html";
+  const sorted = [...allReports].sort((a, b) => {
+    const ta = parseMetaTagTimestamp(join(outputDir, a)) || parseTimestampFromFilename(a);
+    const tb = parseMetaTagTimestamp(join(outputDir, b)) || parseTimestampFromFilename(b);
+    return tb.localeCompare(ta);
+  });
+  for (const r of sorted) {
+    const stage = (r.match(/^report-stage(\d+)/) || [])[1];
+    if (stage === "1" && stage1Latest === "report-stage1.html") stage1Latest = r;
+    if (stage === "2" && stage2Latest === "report-stage2.html") stage2Latest = r;
+  }
+
+  let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", optionsHtml);
+  navHtml = navHtml.replace("{{STAGE1_LINK}}", stage1Latest);
+  navHtml = navHtml.replace("{{STAGE2_LINK}}", stage2Latest);
+
+  // Copy all versioned report files
+  for (const file of allReports) {
     const src = join(outputDir, file);
     if (existsSync(src)) {
       let html = readFileSync(src, "utf-8");
@@ -80,9 +129,6 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
   }
 
   const reports: any[] = [];
-  const stage1 = existsSync(join(ghPagesDir, "report-stage1.html"));
-  const stage2 = existsSync(join(ghPagesDir, "report-stage2.html"));
-
   let forks = 0, interesting = 0;
   try {
     const data = JSON.parse(readFileSync(join(outputDir, "analysis.json"), "utf-8"));
@@ -90,18 +136,15 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
     interesting = data.filter((d: any) => !d.is_bot_only && d.max_ahead > 0).length;
   } catch {}
 
-  const now = new Date().toISOString();
-  if (stage1) reports.push({ file: "report-stage1.html", stage: "Stage 1", timestamp: now, forks, interesting });
-  if (stage2) reports.push({ file: "report-stage2.html", stage: "Stage 2", timestamp: now, forks, interesting });
-  for (const vFile of ["report-stage1-v1.html", "report-stage2-v1.html"]) {
-    if (existsSync(join(ghPagesDir, vFile))) {
-      const s = vFile.includes("stage2") ? "Stage 2" : "Stage 1";
-      reports.push({ file: vFile, stage: s, timestamp: now, forks, interesting });
-    }
+  for (const r of allReports) {
+    const s = r.includes("stage2") ? "Stage 2" : "Stage 1";
+    const ts = parseMetaTagTimestamp(join(outputDir, r)) || parseTimestampFromFilename(r) || new Date().toISOString();
+    reports.push({ file: r, stage: s, timestamp: ts, forks, interesting });
   }
 
   generateLanding(reports, ghPagesDir);
 
   writeFileSync(join(ghPagesDir, ".nojekyll"), "");
+
   console.log("GH Pages export: " + ghPagesDir);
 }

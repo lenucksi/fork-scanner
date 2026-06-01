@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import type { Fork, BranchCompare, ForkAnalysis, DeepAnalysis, PRInfo } from "./utils/types.js";
 import { categorizePushed, PUSHED_LABELS } from "./config.js";
 
 const __dirname = dirname(new URL(import.meta.url).pathname);
 const TEMPLATE_DIR = join(__dirname, "..", "templates");
+
+function parseTimestampFromFilename(filename: string): string {
+  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] + "T00:00:00.000Z" : "";
+}
 
 function loadTemplate(name: string): string {
   return readFileSync(join(TEMPLATE_DIR, name + ".html"), "utf-8");
@@ -37,9 +42,45 @@ function getPushedDist(forks: Fork[]): Record<string, number> {
   return dist;
 }
 
+function buildReportFilename(stage: number, runType: string, timestamp: string, parentFilename?: string): string {
+  const datePart = timestamp.slice(0, 10);
+  const base = `report-stage${stage}-${runType}-${datePart}`;
+  if (parentFilename) {
+    const parentMatch = parentFilename.match(/-(\d{4}-\d{2}-\d{2})/);
+    const parentDate = parentMatch ? parentMatch[1] : "unknown";
+    return `${base}-from-${parentDate}.html`;
+  }
+  return `${base}.html`;
+}
+
+function findLatestReport(outputDir: string, stage: number): { filename: string; timestamp: string } | null {
+  let latest: { filename: string; timestamp: string } | null = null;
+  try {
+    for (const f of readdirSync(outputDir)) {
+      const m = f.match(new RegExp(`^report-stage${stage}-(full|inc)-\\d{4}-\\d{2}-\\d{2}(-from-\\d{4}-\\d{2}-\\d{2})?\\.html$`));
+      if (!m) continue;
+      const fp = join(outputDir, f);
+      const content = readFileSync(fp, "utf-8");
+      const meta = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+      let ts = "";
+      if (meta) {
+        const parts = meta[1].split(",");
+        ts = parts[2] || "";
+      }
+      if (!ts) {
+        ts = parseTimestampFromFilename(f);
+      }
+      if (!latest || ts > latest.timestamp) {
+        latest = { filename: f, timestamp: ts };
+      }
+    }
+  } catch {}
+  return latest;
+}
+
 export function generateStage1Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
-  outputDir: string, versioned: boolean, repo: string,
+  outputDir: string, repo: string,
 ) {
   const stats = getStats(forks, analysis, allResults);
   const pushedDist = getPushedDist(forks);
@@ -66,18 +107,20 @@ export function generateStage1Report(
 
   const runType = runType1;
   const changeCount = interesting.filter((f: ForkAnalysis) => f._change !== undefined && f._change !== "unchanged").length;
-  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
+  const nowISO = new Date().toISOString();
+  const parent = runType === "inc" ? findLatestReport(outputDir, 1) : null;
+  const parentRef = parent ? `,based-on:${parent.filename}` : "";
+  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + ',' + nowISO + parentRef + '">\n</head>');
 
-  const fn = versioned ? "report-stage1-v1.html" : "report-stage1.html";
+  const fn = buildReportFilename(1, runType, nowISO, parent?.filename);
   writeFileSync(join(outputDir, fn), html);
-  writeFileSync(join(outputDir, "report-stage1.html"), html);
   console.log("Stage 1 report: " + join(outputDir, fn));
 }
 
 export function generateStage2Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
   outputDir: string, deepMap: Map<string, DeepAnalysis>, prMap: Map<string, PRInfo[]>,
-  versioned: boolean, userNotes: any = {}, repo: string = "?",
+  userNotes: any = {}, repo: string = "?",
 ) {
   const stats = getStats(forks, analysis, allResults);
 
@@ -144,11 +187,13 @@ export function generateStage2Report(
 
   const runType = runType2;
   const changeCount = ordered.filter((f: any) => f._change && f._change !== "unchanged").length;
-  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
+  const nowISO = new Date().toISOString();
+  const parent = runType === "inc" ? findLatestReport(outputDir, 2) : null;
+  const parentRef = parent ? `,based-on:${parent.filename}` : "";
+  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + ',' + nowISO + parentRef + '">\n</head>');
 
-  const fn = versioned ? "report-stage2-v1.html" : "report-stage2.html";
+  const fn = buildReportFilename(2, runType, nowISO, parent?.filename);
   writeFileSync(join(outputDir, fn), html);
-  writeFileSync(join(outputDir, "report-stage2.html"), html);
   console.log("Stage 2 report: " + join(outputDir, fn));
 }
 
@@ -180,9 +225,13 @@ export function generateLanding(reports: any[], outputDir: string) {
     );
 
   let html = loadTemplate("landing");
-  // Inject nav bar for static export (gh-pages) - no version dropdown
+  // Inject nav bar for static export (gh-pages) - resolve latest per stage
   const navTmpl = readFileSync(join(TEMPLATE_DIR, "nav.html"), "utf-8");
-  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
+  let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
+  const stage1Latest = flat.find((r: any) => r.stage === "Stage 1")?.file || "report-stage1.html";
+  const stage2Latest = flat.find((r: any) => r.stage === "Stage 2")?.file || "report-stage2.html";
+  navHtml = navHtml.replace("{{STAGE1_LINK}}", stage1Latest);
+  navHtml = navHtml.replace("{{STAGE2_LINK}}", stage2Latest);
   html = html.replace("{{NAV_BAR}}", navHtml);
   html = html.replace("{{REPOS_JSON}}", JSON.stringify(flat));
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));

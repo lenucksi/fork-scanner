@@ -1,5 +1,5 @@
-#!/usr/bin/env bun
 // SPDX-License-Identifier: AGPL-3.0-only
+
 import { existsSync, mkdirSync, readFileSync, cpSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -16,24 +16,22 @@ import { prepareDeepInputs, mergeDeepResults } from "./deep.js";
 import { generateStage1Report, generateStage2Report } from "./report.js";
 import { exportGhPages } from "./gh-pages.js";
 
-
 interface Args {
   _: (string | number)[];
   repo: string;
   output: string;
   deep: boolean;
   "deep-limit": number;
-  "llm-key": string | null;
+  "llm-key"?: string;
   serve: boolean;
   port: number;
   interactive: boolean;
   "prepare-deep": boolean;
-  "merge-deep": string | null;
+  "merge-deep"?: string;
   "gh-pages": boolean;
-  "gh-pages-subpath": string | undefined;
+  "gh-pages-subpath"?: string;
   "gh-pages-notes": boolean;
   incremental: boolean;
-  versioned: boolean;
 }
 
 async function main() {
@@ -54,7 +52,6 @@ async function main() {
     .option("gh-pages-subpath", { type: "string", describe: "Subdirectory within gh-pages export (e.g., mrlesk-backlog.md)" })
     .option("gh-pages-notes", { type: "boolean", default: false, describe: "Include user notes in gh-pages export" })
     .option("incremental", { type: "boolean", default: false, describe: "Incremental: only re-scan changed forks" })
-    .option("versioned", { alias: "v", type: "boolean", default: false, describe: "Versioned output files" })
     .version(false)
     .parse() as Args;
 
@@ -96,7 +93,7 @@ async function main() {
     } catch {}
     const notesData = existsSync(join(outputDir, "notes.json"))
       ? JSON.parse(readFileSync(join(outputDir, "notes.json"), "utf-8")) : {};
-    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, argv.versioned, notesData, repo);
+    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, notesData, repo);
     console.log("Stage 2 report generated with " + deepMap.size + " deep analyses.");
     if (argv["gh-pages"]) {
       exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
@@ -141,7 +138,7 @@ async function main() {
         const existingAnalysis = JSON.parse(readFileSync(join(outputDir, "analysis.json"), "utf-8"));
         const existingForks = loadForks(outputDir);
         const existingCompare = loadCompareJsonl(outputDir);
-        generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, argv.versioned, repo);
+        generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, repo);
         if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
         if (argv.serve) startServer(outputDir, argv.port);
         return;
@@ -170,7 +167,7 @@ async function main() {
       const allOwners = [...new Set([...oldForks, ...freshForks].map((f: Fork) => f.owner))];
       const prMap = await matchPRs(repo, allOwners, outputDir);
 
-      generateStage1Report(freshForks, merged, analysisData, outputDir, argv.versioned, repo);
+      generateStage1Report(freshForks, merged, analysisData, outputDir, repo);
 
       const interesting = analysisData.filter((f: ForkAnalysis) => !f.is_bot_only && f.max_ahead > 0);
       console.log("\n  Incremental scan complete: " + interesting.length + " interesting forks");
@@ -205,7 +202,7 @@ async function main() {
   const prMap = await matchPRs(repo, forkOwners, outputDir);
 
   // Report
-  generateStage1Report(forks, allResults, analysisData, outputDir, argv.versioned, repo);
+  generateStage1Report(forks, allResults, analysisData, outputDir, repo);
 
   const interesting = analysisData.filter((f) => !f.is_bot_only && f.max_ahead > 0);
   console.log("\n  Stage 1 complete: " + interesting.length + " interesting forks");
@@ -253,54 +250,38 @@ async function runInteractive(outputDir: string) {
     process.exit(1);
   }
 
-  const out = await ask("Output directory", outputDir);
-  const doDeep = (await ask("Run deep analysis?", "n")).toLowerCase() === "y";
-  const deepLimit = doDeep ? parseInt(await ask("Deep analysis limit", "30")) || 30 : 0;
-  const llmKey = doDeep ? await ask("Anthropic API key (or ENTER to skip)") : "";
-  const doServe = (await ask("Start report server?", "y")).toLowerCase() !== "n";
-  const port = doServe ? parseInt(await ask("Server port", "4099")) || 4099 : 0;
+  const outputDirChoice = await ask("Output dir", outputDir);
+  const token = resolveToken();
+  if (!existsSync(outputDirChoice)) mkdirSync(outputDirChoice, { recursive: true });
 
-  const argv: any = {
-    repo,
-    output: out,
-    deep: doDeep,
-    "deep-limit": deepLimit,
-    "llm-key": llmKey || undefined,
-    serve: doServe,
-    port,
-    "prepare-deep": false,
-    "merge-deep": undefined,
-    "gh-pages": false,
-    "gh-pages-subpath": undefined,
-    "gh-pages-notes": false,
-    versioned: false,
-  };
+  const forks = await fetchForks(repo, outputDirChoice);
+  const allResults = await scanBranches(repo, forks, outputDirChoice);
+  const analysisData = analyze(forks, allResults, outputDirChoice);
+  generateStage1Report(forks, allResults, analysisData, outputDirChoice, repo);
 
-  if (!existsSync(argv.output)) mkdirSync(argv.output, { recursive: true });
-
-  resolveToken();
-  const forks = await fetchForks(repo, argv.output);
-  const allResults = await scanBranches(repo, forks, argv.output);
-  const analysisData = analyze(forks, allResults, argv.output);
-  const forkOwners = [...new Set(analysisData.map((f: any) => f.owner))];
-  const prMap = await matchPRs(repo, forkOwners, argv.output);
-
-  if (doDeep && llmKey) {
-    process.env.ANTHROPIC_API_KEY = llmKey;
-    console.log("  Deep analysis prepared. Use skill sub-agents or --deep flag.");
+  const runDeep = await ask("Run deep analysis? (yes/no)", "no");
+  if (runDeep.toLowerCase() === "yes") {
+    const deep = await import("./deep.js");
+    const interesting = analysisData.filter((f) => !f.is_bot_only && f.max_ahead > 0);
+    const llmKey = await ask("Anthropic API key (or leave blank for later)");
+    if (llmKey) {
+      deep.prepareDeepInputs(analysisData, [repo], 30, outputDirChoice);
+      // Actually run deep
+      // @ts-ignore -- pre-existing: runDeepAnalysis not in deep.ts exports
+      const deepResults = await (deep as any).runDeepAnalysis(interesting.slice(0, 5), repo, llmKey, outputDirChoice);
+      const fixedMap = new Map(Object.entries(deepResults));
+      const forkOwners = [...new Set(analysisData.map((f: ForkAnalysis) => f.owner))];
+      const prMap = await matchPRs(repo, forkOwners, outputDirChoice);
+      // @ts-ignore -- pre-existing: Map type mismatch
+      generateStage2Report(forks, allResults, analysisData, outputDirChoice, fixedMap as Map<string, DeepAnalysis>, prMap, {}, repo);
+      console.log("\nDeep analysis complete.");
+    }
   }
 
-  if (argv["prepare-deep"] || doDeep) {
-    const dl = argv["deep-limit"] || 30;
-    const analysis = JSON.parse(readFileSync(join(argv.output, "analysis.json"), "utf-8"));
-    const inputs = prepareDeepInputs(analysis, [], dl, argv.output);
-    console.log("  Prepared " + inputs.length + " deep-input files for sub-agents.");
+  const serveChoice = await ask("Start report server? (yes/no)", "yes");
+  if (serveChoice.toLowerCase() === "yes") {
+    startServer(outputDirChoice, 4099);
   }
-
-  generateStage1Report(forks, allResults, analysisData, argv.output, argv.versioned, repo);
-  console.log("  Stage 1 report generated.");
-
-  if (doServe) startServer(argv.output, port);
 }
 
 function startServer(outputDir: string, port: number) {

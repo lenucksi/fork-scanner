@@ -13,10 +13,20 @@ Scan all forks of any GitHub repo. Analyse community contributions, find feature
 ## Quick Start
 
 ```bash
-# Stage 1 — fork discovery, branch compare, PR matching (no LLM needed)
-npx fork-scan MrLesk/Backlog.md --serve
+# Install
+bun install
 
-# Opens at http://localhost:4099
+# Stage 1 — fork discovery, branch compare, PR matching (no LLM needed)
+bun run src/index.ts MrLesk/Backlog.md
+
+# Start the report server
+bun run serve
+
+# Dev mode (auto-restart on source changes)
+bun run dev
+
+# Regenerate reports from existing scan data and start server
+./tools/start-analysis-backlog-data.sh
 ```
 
 ## Table of Contents
@@ -29,28 +39,30 @@ npx fork-scan MrLesk/Backlog.md --serve
   - [Stage 2 — Deep Analysis](#stage-2--deep-analysis)
   - [Interactive Mode](#interactive-mode)
   - [GitHub Pages Export](#github-pages-export)
+- [Scripts](#scripts)
 - [OpenCode Skill](#opencode-skill)
   - [Skill Mode (Harness)](#skill-mode-harness)
   - [Standalone Mode](#standalone-mode)
 - [Output Structure](#output-structure)
 - [Architecture](#architecture)
 - [Templates](#templates)
-- [Permissions](#required-permissions)
+- [Testing](#testing)
+- [Required Permissions](#required-permissions)
 
 ## Installation
 
 ```bash
 # Global install
-npm install -g @backlog/fork-scanner
+npm install -g @lenucksi/fork-scanner
 
 # Or run directly
-npx @backlog/fork-scanner MrLesk/Backlog.md
+npx @lenucksi/fork-scanner MrLesk/Backlog.md
 
 # From source
-git clone https://github.com/your-org/fork-scanner.git
+git clone https://github.com/lenucksi/fork-scanner.git
 cd fork-scanner
 bun install
-bun src/index.ts MrLesk/Backlog.md
+bun run src/index.ts MrLesk/Backlog.md
 ```
 
 **Prerequisites:**
@@ -78,16 +90,17 @@ fork-scan MrLesk/Backlog.md --merge-deep ./deep-output
 fork-scan --interactive
 
 # Export static site for GitHub Pages
-fork-scan MrLesk/Backlog.md --gh-pages
+fork-scan MrLesk/Backlog.md --gh-pages \
+  --gh-pages-subpath my-analysis
 
 # Custom output directory
 fork-scan MrLesk/Backlog.md -o ./reports/my-scan
 
-# Versioned output (keeps previous runs)
-fork-scan MrLesk/Backlog.md --versioned
-
 # Incremental re-scan (only changed forks)
 fork-scan MrLesk/Backlog.md -o ./scan-data --incremental --serve
+
+# Serve existing scan data
+bun run src/index.ts --output /path/to/scan-data --serve
 ```
 
 ## Modes
@@ -108,12 +121,12 @@ Runs entirely on GitHub REST API. No LLM needed. Always produces identical resul
 **Output:**
 ```
 scan-output/
-├── report-stage1.html       ← Open this
-├── forks.json               # All 338 forks
-├── compare.jsonl            # Branch comparisons
-├── analysis.json            # Filtered + clustered
-├── prs.json                 # PR matching + reactions
-└── state.json               # Resumable scan state
+├── report-stage1-full-2026-06-01.html   ← Versioned report
+├── forks.json
+├── compare.jsonl
+├── analysis.json
+├── prs.json
+└── state.json
 ```
 
 ### Incremental Scan (Stage 1 re-scan)
@@ -140,6 +153,8 @@ fork-scan MrLesk/Backlog.md -o ./my-scan --incremental
 - 🟡 **Updated** row (amber) — new commits detected on existing fork
 - 🔴 **Rewritten** row (red, striped) — force-push replaced the branch history
 
+Incremental reports use the `-inc-{date}-from-{parent-date}` filename convention, referencing the prior report they're based on. The parent reference is also stored in the HTML `<meta name="fs:meta">` tag.
+
 Combine with `--prepare-deep` and `--serve`:
 
 ```bash
@@ -150,7 +165,14 @@ fork-scan MrLesk/Backlog.md -o ./scan-data --incremental --prepare-deep --deep-l
 
 Adds AI-powered classification on top of Stage 1.
 
-**Two flavours:** | Mode | LLM Source | Setup | --- | --- | --- | **OpenCode Skill** | Coding harness (Task tool sub-agents) | No key needed | **Standalone CLI** | Anthropic API direct | `ANTHROPIC_API_KEY` or `--llm-key` | **What it adds:**
+**Two flavours:**
+
+| Mode | LLM Source | Setup |
+|------|-----------|-------|
+| **OpenCode Skill** | Coding harness (Task tool sub-agents) | No key needed |
+| **Standalone CLI** | Anthropic API direct | `ANTHROPIC_API_KEY` or `--llm-key` |
+
+**What it adds:**
 
 - Feature classification per fork (tags, value assessment, upstreamability score)
 - Priority matrix sorted by impact × upstreamability
@@ -177,23 +199,45 @@ Walks through the full pipeline step-by-step:
 ### GitHub Pages Export
 
 ```bash
-fork-scan MrLesk/Backlog.md --gh-pages
+fork-scan MrLesk/Backlog.md --gh-pages \
+  --gh-pages-subpath my-analysis
 ```
 
-Exports to `<output>/gh-pages/`:
+Exports to `<output>/gh-pages/<subpath>/`:
 
 ```
-gh-pages/
-├── index.html                 ← Landing page
-├── report-stage1.html         ← Stage 1 report
-├── report-stage2.html         ← Stage 2 (if available)
-├── analysis.json              ← Machine-readable data
+gh-pages/my-analysis/
+├── index.html                          ← Landing page (auto-generated)
+├── report-stage1-full-2026-06-01.html  ← All versioned reports
+├── report-stage2-full-2026-06-01.html
+├── chart.umd.min.js                    ← Vendored JS/CSS
+├── marked.min.js
+├── highlight.min.js
+├── github-dark.min.css
+├── analysis.json                       ← Machine-readable data
 ├── forks.json
 ├── prs.json
-└── .nojekyll                  ← For GH Pages compatibility
+└── .nojekyll                           ← For GH Pages compatibility
 ```
 
-The export is fully static — no save-note endpoints, no server needed.
+The export is fully static — all report files are versioned with date-based filenames. The nav bar links point to the latest version per stage. The version dropdown lists every report with its run type, date, and change count (parsed from `<meta name="fs:meta">` tags). No server needed.
+
+See the [reports repo](https://github.com/lenucksi/fork-scanner-reports) for a live example.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `bun run build` | Build CLI bundle to `dist/` |
+| `bun run serve` | Start report server on `./scan-output` |
+| `bun run dev` | Start server with `bun --watch` (auto-restart on source changes) |
+| `bun run typecheck` | Run TypeScript type check |
+| `bun test` | Run unit tests |
+| `bun run test:e2e` | Run Playwright end-to-end tests |
+| `bun run update-vendors` | Update vendored JS/CSS from CDN |
+| `./tools/start-analysis-backlog-data.sh` | Regenerate reports from existing scan data + start server |
+
+The report server reads files fresh on every request — HTML report changes in the output directory are reflected immediately without restarting.
 
 ## OpenCode Skill
 
@@ -220,8 +264,7 @@ When run through the OpenCode skill, deep analysis uses **sub-agents** via the T
 3. `fork-scan MrLesk/Backlog.md --merge-deep ./deep-output`
    → Generates Stage 2 HTML report with all data merged
 
-4. Optionally: `fork-scan MrLesk/Backlog.md --serve`
-   → Start the local report server
+4. Optionally: `bun run serve` → Start the local report server
 
 ### Standalone Mode
 
@@ -239,29 +282,46 @@ The CLI makes direct Anthropic API calls (parallel, rate-limited) for the same c
 
 ```
 <output-dir>/
-├── report-stage1.html           # Stage 1: all forks, charts, tables
-├── report-stage2.html           # Stage 2: deep analysis, priority matrix
-├── report-stage1-v1.html        # Versioned (with --version flag)
-├── report-stage2-v1.html
-├── forks.json                   # Raw fork metadata (incl. pushed_at for change detection)
-├── compare.jsonl                # Branch-by-branch comparison results (incl. _is_new commit flags)
-├── analysis.json                # Filtered, clustered, bot-detected (+ _change, _new_commits, _rewritten_commits)
-├── prs.json                     # PR matching + reactions
-├── state.json                   # Resumable scan state
-├── notes.json                   # User notes (from serve.ts save-note)
-├── deep-manifest.json           # Manifest of prepared deep-input files
-├── deep-input/                  # Per-fork input files for sub-agents
+├── report-stage1-full-2026-06-01.html    # Versioned report (stage, run-type, date)
+├── report-stage2-full-2026-06-01.html
+├── report-stage2-inc-2026-06-07-from-2026-06-01.html  # Incremental: references parent
+├── forks.json                            # Raw fork metadata
+├── compare.jsonl                         # Branch-by-branch comparison results
+├── analysis.json                         # Filtered, clustered, bot-detected
+├── prs.json                              # PR matching + reactions
+├── state.json                            # Resumable scan state
+├── notes.json                            # User notes (from save-note endpoints)
+├── deep-manifest.json                    # Manifest of prepared deep-input files
+├── deep-input/                           # Per-fork input files for sub-agents
 │   ├── kuwork__Backlog.md.json
 │   └── ...
-├── deep-output/                 # Sub-agent batch results
+├── deep-output/                          # Sub-agent batch results
 │   ├── batch1.json
 │   └── ...
-└── gh-pages/                    # Static export (--gh-pages)
-    ├── index.html
-    ├── report-stage1.html
-    ├── .nojekyll
-    └── ...
+└── gh-pages/                             # Static export (--gh-pages)
+    └── my-analysis/
+        ├── index.html
+        ├── report-stage1-full-2026-06-01.html
+        └── ...
 ```
+
+**Filename convention:**
+```
+report-stage{1|2}-{full|inc}-{YYYY-MM-DD}(-from-{parent-YYYY-MM-DD})?.html
+```
+
+Every report is a versioned file. The `-from-` suffix appears only for incremental scans and links to the parent report. The same information is stored in the HTML `<meta name="fs:meta">` tag.
+
+**Meta tag format:**
+```html
+<!-- full baseline -->
+<meta name="fs:meta" content="full,0,2026-06-01T02:30:00.000Z">
+
+<!-- incremental with parent reference -->
+<meta name="fs:meta" content="inc,3,2026-06-07T02:30:00.000Z,based-on:report-stage2-full-2026-06-01.html">
+```
+
+Fields: `runType,changeCount,ISOTimestamp[,based-on:parentFilename]`
 
 ## Architecture
 
@@ -279,6 +339,8 @@ CLI entry (src/index.ts)
   ├── src/deep.ts         Deep input prep + merge
   │
   ├── src/report.ts       HTML report generator
+  │   └── buildReportFilename()  — date-based versioned filenames
+  │   └── findLatestReport()     — parent detection from meta tags
   │
   ├── src/utils/state.ts  Incremental merge, SHA index, load/save helpers
   │   └── utils/bot.ts    Bot author pattern matching
@@ -288,14 +350,14 @@ CLI entry (src/index.ts)
   │       ├── stage2.html
   │       └── landing.html
   │
-  ├── src/serve.ts        Local dev server (notes persistence)
+  ├── src/serve.ts        Local dev server
+  │   └── generateNavBar()  — reads meta tags, injects nav links
   │
   └── src/gh-pages.ts     Static GH Pages export
+      └── dynamic file scan — copies all versioned files
 
-opencode/                 OpenCode integration
-├── fork-scan-skill/
-│   └── SKILL.md
-└── scan.yaml
+tools/
+└── start-analysis-backlog-data.sh  — Reproduce reports from existing data
 ```
 
 ### Template System
@@ -307,6 +369,8 @@ This means:
 - No server-side rendering needed
 - Templates can be edited independently of source code
 - Data is machine-readable in the page source
+
+The nav bar (`nav.html`) uses `{{STAGE1_LINK}}` / `{{STAGE2_LINK}}` placeholders that are dynamically injected by `serve.ts` and `gh-pages.ts` — pointing to the latest versioned report per stage.
 
 ## Testing
 
@@ -343,4 +407,4 @@ A fine-grained personal access token with **no scopes** works — the API is all
 
 ## License
 
-MIT
+AGPL-3.0-only
