@@ -97,9 +97,8 @@ export function mergeDeepResults(
   const result = new Map<string, DeepAnalysis>();
   const dir = deepOutputDir || join(deepOutputDir, "..", "deep-output");
 
-  if (!existsSync(dir)) {
-    // Try single batch files
-    for (let i = 1; i <= 10; i++) {
+  if (existsSync(dir)) {
+    for (let i = 1; i <= 20; i++) {
       const fp = join(dir, "batch" + i + ".json");
       if (existsSync(fp)) {
         const batch: DeepAnalysis[] = JSON.parse(readFileSync(fp, "utf-8"));
