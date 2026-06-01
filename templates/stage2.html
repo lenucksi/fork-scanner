@@ -57,7 +57,7 @@ tr:hover{background:var(--accent-light)}
 .fork-actions{display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap}
 .fork-actions label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem}
 .fork-actions textarea{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical}
-.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}#matrixBody tr.merged-upstream{opacity:0.35}#matrixBody tr.merged-upstream:hover{opacity:0.6}
+.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}#matrixBody tr.merged-upstream{opacity:0.35}#matrixBody tr.merged-upstream:hover{opacity:0.6}.detail-card.merged-upstream{opacity:0.35}.detail-card.merged-upstream:hover{opacity:0.6}
 @media(max-width:768px){.container{padding:12px}.stats-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -210,6 +210,8 @@ D.details.forEach(f => {
   // Set attributes for filtering
   card.setAttribute('data-change', f._change || 'unchanged');
   card.setAttribute('data-excluded', note.excluded ? 'true' : 'false');
+  const mergedUpstreamCard = f.prs && f.prs.length > 0 && f.prs.every(p => p.merged_at);
+  card.setAttribute('data-merged', mergedUpstreamCard ? 'true' : 'false');
   if (note.excluded) card.classList.add('excluded');
   detailsEl.appendChild(card);
 });
@@ -229,6 +231,9 @@ function toggleMergedFilter() {
   const dim = document.getElementById('mergedFilter').checked;
   document.querySelectorAll('#matrixBody tr[data-merged="true"]').forEach(tr => {
     tr.classList.toggle('merged-upstream', dim);
+  });
+  document.querySelectorAll('.detail-card[data-merged="true"]').forEach(card => {
+    card.classList.toggle('merged-upstream', dim);
   });
 }
 

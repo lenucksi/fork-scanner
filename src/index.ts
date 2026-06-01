@@ -13,6 +13,7 @@ import { analyze } from "./analyze.js";
 import type { BranchCompare, Fork, ForkAnalysis } from "./utils/types.js";
 import { matchPRs } from "./pr-check.js";
 import { prepareDeepInputs, mergeDeepResults } from "./deep.js";
+import { loadCompareJsonl } from "./utils/state.js";
 import { generateStage1Report, generateStage2Report } from "./report.js";
 import { exportGhPages } from "./gh-pages.js";
 
@@ -93,7 +94,8 @@ async function main() {
     } catch {}
     const notesData = existsSync(join(outputDir, "notes.json"))
       ? JSON.parse(readFileSync(join(outputDir, "notes.json"), "utf-8")) : {};
-    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, notesData, repo);
+    const compareData = loadCompareJsonl(outputDir);
+    generateStage2Report(forksData, compareData, analysisData, outputDir, deepMap, prsData, notesData, repo);
     console.log("Stage 2 report generated with " + deepMap.size + " deep analyses.");
     if (argv["gh-pages"]) {
       exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
