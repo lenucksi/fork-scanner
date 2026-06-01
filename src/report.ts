@@ -38,15 +38,13 @@ function getPushedDist(forks: Fork[]): Record<string, number> {
 
 export function generateStage1Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
-  outputDir: string, versioned: boolean,
+  outputDir: string, versioned: boolean, repo: string,
 ) {
   const stats = getStats(forks, analysis, allResults);
   const pushedDist = getPushedDist(forks);
   const interesting = analysis.filter((s) => !s.is_bot_only && s.max_ahead > 0);
   const pushedLabels = Object.keys(PUSHED_LABELS).map((k) => PUSHED_LABELS[k]);
   const pushedValues = Object.keys(PUSHED_LABELS).map((k) => pushedDist[k] || 0);
-  const repo = allResults.length > 0 ? allResults[0].full_name.split("/")[0] + "/..." : "?";
-
   const data = {
     stats: { total: forks.length, identical: stats.identical, behind: stats.behind, aheadBot: stats.aheadBot, aheadHuman: stats.aheadHuman },
     pushedLabels, pushedValues,
@@ -63,6 +61,10 @@ export function generateStage1Report(
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
 
+  const runType = interesting.some((f: ForkAnalysis) => f._change !== undefined) ? "inc" : "full";
+  const changeCount = interesting.filter((f: ForkAnalysis) => f._change !== undefined && f._change !== "unchanged").length;
+  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
+
   const fn = versioned ? "report-stage1-v1.html" : "report-stage1.html";
   writeFileSync(join(outputDir, fn), html);
   writeFileSync(join(outputDir, "report-stage1.html"), html);
@@ -72,10 +74,9 @@ export function generateStage1Report(
 export function generateStage2Report(
   forks: Fork[], allResults: BranchCompare[], analysis: ForkAnalysis[],
   outputDir: string, deepMap: Map<string, DeepAnalysis>, prMap: Map<string, PRInfo[]>,
-  versioned: boolean, userNotes: any = {},
+  versioned: boolean, userNotes: any = {}, repo: string = "?",
 ) {
   const stats = getStats(forks, analysis, allResults);
-  const repo = allResults.length > 0 ? allResults[0].full_name.split("/")[0] + "/..." : "?";
 
   const deepEntries = [...deepMap.entries()];
   const valueOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
@@ -90,7 +91,7 @@ export function generateStage2Report(
         focus: r.main_focus, has_code: r.has_code_changes,
         _updates: r._updates,
         _change: f?._change || "unchanged",
-        max_ahead: f?.max_ahead ?? 0, pushed_at: f?.pushed_at ?? "",
+        max_ahead: f?.max_ahead ?? 0, max_behind: f?.max_behind ?? 0, pushed_at: f?.pushed_at ?? "",
         files: allFiles.length,
         adds: allFiles.reduce((s, f2) => s + (f2.additions || 0), 0),
         dels: allFiles.reduce((s, f2) => s + (f2.deletions || 0), 0),
@@ -135,6 +136,10 @@ export function generateStage2Report(
   html = html.replace("{{REPO}}", esc(repo));
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
+
+  const runType = ordered.some((f: any) => f._change && f._change !== "unchanged") ? "inc" : "full";
+  const changeCount = ordered.filter((f: any) => f._change && f._change !== "unchanged").length;
+  html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
 
   const fn = versioned ? "report-stage2-v1.html" : "report-stage2.html";
   writeFileSync(join(outputDir, fn), html);

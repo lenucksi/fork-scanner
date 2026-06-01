@@ -56,6 +56,7 @@ tr:hover{background:var(--accent-light)}
 .fork-actions{display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap}
 .fork-actions label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem}
 .fork-actions textarea{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical}
+.detail-card.excluded{opacity:0.45}.detail-card.excluded:hover{opacity:0.7}.detail-card.excluded .detail-header{text-decoration:line-through}
 @media(max-width:768px){.container{padding:12px}.stats-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -77,10 +78,6 @@ tr:hover{background:var(--accent-light)}
 <th>#</th><th>Fork</th><th>Title</th><th>Value</th><th>Upstr</th><th>Focus</th><th>PR</th><th>Tags</th>
 </tr></thead><tbody id="matrixBody"></tbody></table></div>
 
-<h2>Feature Heatmap</h2>
-<p id="featureCount" style="color:var(--text-secondary);margin-bottom:12px"></p>
-<div style="overflow-x:auto"><table><thead><tr><th>Feature</th><th>Forks</th><th>%</th><th>Bar</th></tr></thead><tbody id="heatmapBody"></tbody></table></div>
-
 <h2>Deep Analysis — Per Fork Details</h2>
 <p style="color:var(--text-secondary);margin-bottom:12px" id="deepCoverage"></p>
 <div id="changeFilter" style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem">
@@ -96,8 +93,16 @@ tr:hover{background:var(--accent-light)}
   <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
     <input type="checkbox" value="unchanged" checked onchange="applyDetailFilter()"> <span>Unchanged</span>
   </label>
+  <span style="color:var(--border);width:1px;height:20px;display:inline-block;border-left:1px solid var(--border)"></span>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;opacity:0.6">
+    <input type="checkbox" value="excluded" onchange="applyDetailFilter()"> <span>Excluded</span>
+  </label>
 </div>
 <div id="forkDetails"></div>
+
+<h2>Feature Heatmap</h2>
+<p id="featureCount" style="color:var(--text-secondary);margin-bottom:12px"></p>
+<div style="overflow-x:auto"><table><thead><tr><th>Feature</th><th>Forks</th><th>%</th><th>Bar</th></tr></thead><tbody id="heatmapBody"></tbody></table></div>
 </div>
 
 <script>
@@ -164,7 +169,7 @@ D.details.forEach(f => {
   <div class="detail-body">
     <div class="detail-meta">
       <span>📅 ${f.pushed_at ? new Date(f.pushed_at).toISOString().slice(0,10) : '?'}</span>
-      <span>📈 +${f.max_ahead} ahead</span>
+      <span>📈 +${f.max_ahead} ahead${f.max_behind > 0 ? ' / -'+f.max_behind+' behind' : ''}</span>
       <span>📁 ${f.files||0} files</span>
       <span>➕ +${f.adds||0} / ➖ -${f.dels||0} lines</span>
       <span>🔗 <a href="https://github.com/${esc(f.full_name)}" target="_blank">View</a></span>
@@ -190,18 +195,24 @@ D.details.forEach(f => {
     ${f.branches && f.branches.length ? '<details style="margin-top:8px"><summary style="font-size:0.85rem;padding:6px 8px;cursor:pointer">Branches ('+f.branches.length+')</summary><ul style="padding:8px;list-style:none">'+f.branches.map(b=>'<li style="margin:4px 0;font-family:monospace;font-size:0.85rem"><strong>'+esc(b.name)+'</strong> +'+b.ahead+'/-'+b.behind+' · '+b.files+' files</li>').join('')+'</ul></details>' : ''}
     <div class="fork-actions">
       <label><input type="checkbox" class="fork-check" data-fork="${esc(f.full_name)}" ${note.checked?'checked':''} onchange="saveNote('${esc(f.full_name)}')"> Further analysis needed</label>
+      <label style="opacity:0.6"><input type="checkbox" class="fork-exclude" data-fork="${esc(f.full_name)}" ${note.excluded?'checked':''} onchange="saveNote('${esc(f.full_name)}')"> Exclude from view</label>
       <textarea class="fork-note" data-fork="${esc(f.full_name)}" placeholder="What to analyze further..." onchange="saveNote('${esc(f.full_name)}')">${esc(note.note)}</textarea>
     </div>
   </div>`;
-  // Set data-change attribute on card for filter
+  // Set attributes for filtering
   card.setAttribute('data-change', f._change || 'unchanged');
+  card.setAttribute('data-excluded', note.excluded ? 'true' : 'false');
+  if (note.excluded) card.classList.add('excluded');
   detailsEl.appendChild(card);
 });
 
 function applyDetailFilter() {
   const active = [...document.querySelectorAll('#changeFilter input:checked')].map(cb => cb.value);
+  const showExcluded = active.includes('excluded');
   document.querySelectorAll('.detail-card').forEach(card => {
     const change = card.getAttribute('data-change') || 'unchanged';
+    const isExcluded = card.getAttribute('data-excluded') === 'true';
+    if (isExcluded && !showExcluded) { card.style.display = 'none'; return; }
     card.style.display = active.includes(change) ? '' : 'none';
   });
 }
@@ -213,24 +224,40 @@ function saveNote(fork) {
   if (!el) return;
   var card = el.closest('.detail-card');
   var checked = card.querySelector('.fork-check').checked;
+  var excluded = card.querySelector('.fork-exclude').checked;
   var note = card.querySelector('.fork-note').value;
-  var data = JSON.parse(localStorage.getItem('fork-notes')||'{}');
-  data[fork] = {checked,note};
+  var data = {};
+  try { data = JSON.parse(localStorage.getItem('fork-notes')||'{}'); } catch(e) { data = {}; }
+  data[fork] = {checked,excluded,note};
   localStorage.setItem('fork-notes',JSON.stringify(data));
+  // Update card state immediately
+  card.setAttribute('data-excluded', excluded ? 'true' : 'false');
+  if (excluded) card.classList.add('excluded'); else card.classList.remove('excluded');
+  applyDetailFilter();
   // Try server save
-  fetch('/save-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fork,checked,note})}).catch(()=>{});
+  fetch('/save-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fork,checked,excluded,note})}).catch(()=>{});
 }
 
 // Load notes from localStorage on page load
 (function(){
   try {
-    var notes = JSON.parse(localStorage.getItem('fork-notes')||'{}');
+    var raw = localStorage.getItem('fork-notes');
+    if (raw === '[object Object]') { localStorage.removeItem('fork-notes'); raw = null; }
+    var notes = JSON.parse(raw||'{}');
     Object.entries(notes).forEach(([fork,n]) => {
-      var cb = document.querySelector('.fork-check[data-fork="'+fork+'"]');
-      var ta = document.querySelector('.fork-note[data-fork="'+fork+'"]');
+      var card = document.querySelector('.detail-card .detail-body .fork-check[data-fork="'+fork+'"]');
+      if (!card) return;
+      var c = card.closest('.detail-card');
+      var cb = c.querySelector('.fork-check');
+      var ex = c.querySelector('.fork-exclude');
+      var ta = c.querySelector('.fork-note');
       if(cb) cb.checked = n.checked;
+      if(ex) { ex.checked = n.excluded; c.setAttribute('data-excluded', n.excluded ? 'true' : 'false'); if (n.excluded) c.classList.add('excluded'); else c.classList.remove('excluded'); }
       if(ta) ta.value = n.note||'';
     });
+    // Apply exclusion filter on load
+    var showExcludedCheckbox = document.querySelector('#changeFilter input[value="excluded"]');
+    if (showExcludedCheckbox && !showExcludedCheckbox.checked) applyDetailFilter();
   } catch(e){}
 })();
 
