@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync } from "fs";
 import { join } from "path";
@@ -5,7 +6,8 @@ import { generateLanding } from "./report.js";
 import { dirname } from "path";
 const __dirname = dirname(new URL(import.meta.url).pathname);
 
-export function exportGhPages(outputDir: string, ghPagesDir: string) {
+export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: string) {
+  if (subpath) ghPagesDir = join(ghPagesDir, subpath);
   if (!existsSync(ghPagesDir)) mkdirSync(ghPagesDir, { recursive: true });
 
   // Copy report files
@@ -18,6 +20,8 @@ export function exportGhPages(outputDir: string, ghPagesDir: string) {
       // Remove interactive /save-note references (gh-pages is static)
       html = html.replace(/fetch\(['"]\/save-note['"][\s\S]*?\)\.catch\(\(\)=>{}\)\);/g, "");
       html = html.replace(/\/save-note/g, "#");
+      // Strip user notes from embedded window.__DATA__ (not for public export)
+      html = html.replace(/"notes":\{(?:[^{}]|\{[^{}]*\})*\},?/g, "");
       // Inject nav bar (static version, no dropdown)
       html = html.replace("{{NAV_BAR}}", navHtml);
       writeFileSync(join(ghPagesDir, file), html);
