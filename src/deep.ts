@@ -113,13 +113,11 @@ export function mergeDeepResults(
             const update = {
               date: new Date().toISOString(),
               change: "updated" as "new" | "updated" | "rewritten",
-              new_commits: 0,
-              analysis: r.description,
-              value_assessment: r.value_assessment,
-              upstreamability: r.upstreamability,
-              _is_current: true,
+              new_commits: r._new_commits || 0,
+              analysis: existing.description,
+              value_assessment: existing.value_assessment,
+              upstreamability: existing.upstreamability,
             };
-            // Preserve previous updates from existing entry
             const previousUpdates = existing._updates || [];
             r._updates = [...previousUpdates, update];
           }

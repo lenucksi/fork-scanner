@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, beforeAll } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";

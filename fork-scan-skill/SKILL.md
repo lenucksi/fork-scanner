@@ -19,6 +19,36 @@ This fetches all forks, compares every branch against upstream, identifies share
 
 **Output:** `report-stage1.html` + `forks.json`, `analysis.json`, `prs.json`, `notes.json`
 
+### Incremental Re-scan
+
+Re-scan only forks that changed since the last scan — detects new forks, changed pushed_at timestamps, and force-pushes:
+
+```
+fork-scan <repo> --output <existing-scan-data> --incremental
+```
+
+**What it does:**
+
+1. Loads existing `forks.json` + `compare.jsonl` from the previous scan
+2. Fetches fresh fork list, compares `pushed_at` with stored data
+3. Identifies new / updated / unchanged forks
+4. Re-scans only new + updated forks (full upstream compare)
+5. SHA-to-SHA cross-reference to flag `_is_new` commits
+6. Detects force-pushes via `merge_base_sha` change + vanished tip SHAs → `rewritten` label
+7. Merges old + new compare data, preserving unchanged entries
+8. Re-runs analysis with `_change`, `_new_commits`, `_rewritten_commits` on each ForkAnalysis
+
+**Change badges in Stage 1 report:**
+- 🟢 **New** (green left border) — fork never seen before
+- 🟡 **Updated** (amber) — new commits since last scan
+- 🔴 **Rewritten** (red) — force-push detected, history replaced
+
+Combine with `--prepare-deep` to generate deep-input for sub-agents:
+
+```
+fork-scan <repo> --output <existing-scan-data> --incremental --prepare-deep --deep-limit 30
+```
+
 ## Stage 2 — Deep Analysis (Skill Harness Mode)
 
 ### 1. Prepare Data
@@ -52,9 +82,11 @@ Analyze this fork of Backlog.md.
 Fork: {full_name}
 URL: {url}
 Pushed: {pushed_at}
+Change status: {_change} (new/updated/rewritten)
+New commits since last analysis: {_new_commits}
 Branches: {branches}
 
-For each branch, review the commits and files.
+For each branch, review the commits and files. If this fork has been updated (change status is "updated" or "rewritten"), focus your analysis on the new commits. Produce an incremental update paragraph describing what changed.
 
 Output JSON:
 { "full_name": "...", "title": "...", "description": "...", "value": "high|medium|low", "upstream": 1-5, "focus": "feature|fix|docs|maintenance|config", "tags": ["tag1", "tag2"] }
@@ -134,12 +166,13 @@ scan-output/
 ├── report-stage1.html         # Stage 1: all forks, charts, tables
 ├── report-stage2.html         # Stage 2: deep analysis, priority matrix
 ├── forks.json                 # Raw fork metadata
-├── analysis.json              # Filtered, clustered, bot-detected
+├── compare.jsonl              # Branch comparisons (incl. _is_new commit flags)
+├── analysis.json              # Filtered, clustered, bot-detected (+ _change, _new_commits, _rewritten_commits)
 ├── prs.json                   # PR matching + reactions
 ├── notes.json                 # User notes (from serve)
 ├── state.json                 # Resumable scan state
-├── deep-input/                # Per-fork data for sub-agents
-├── deep-output/               # Sub-agent batch results
+├── deep-input/                # Per-fork data for sub-agents (+ _change context)
+├── deep-output/               # Sub-agent batch results (+ _updates timeline)
 └── gh-pages/                  # Static export
 ```
 

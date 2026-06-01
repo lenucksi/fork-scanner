@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect } from "bun:test";
 import { detectChanges, buildOldShaMap } from "../scan.js";
 import type { Fork, BranchCompare } from "../utils/types.js";

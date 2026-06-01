@@ -62,6 +62,8 @@ export interface DeepAnalysis {
   main_focus: "feature" | "fix" | "config" | "docs" | "maintenance";
   upstreamability: number;
   value_assessment: "high" | "medium" | "low";
+  /** Number of new commits since last analysis (set by sub-agent for incremental) */
+  _new_commits?: number;
   /** Incremental update history appended on each re-analysis */
   _updates?: DeepAnalysisUpdate[];
 }

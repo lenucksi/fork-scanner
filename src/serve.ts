@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, cpSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, cpSync, readdirSync, statSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,30 @@ function findFreePort(start: number): number {
   } catch {
     return start;
   }
+}
+
+/** Generate navigation bar with version dropdown from available reports */
+function generateNavBar(outputDir: string, currentFile?: string): string {
+  const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
+  const reports: string[] = [];
+  try {
+    for (const f of readdirSync(outputDir)) {
+      if (/^report-(stage|stufe)\d+(-v\d+)?\.html$/.test(f)) {
+        reports.push(f);
+      }
+    }
+  } catch {}
+  reports.sort((a, b) => {
+    try { return statSync(join(outputDir, b)).mtimeMs - statSync(join(outputDir, a)).mtimeMs; }
+    catch { return 0; }
+  });
+  let options = "";
+  for (const r of reports) {
+    const label = r.replace(/\.html$/, "").replace("report-", "").replace("stufe", "Stage ");
+    const selected = r === currentFile ? " selected" : "";
+    options += '<option value="/' + r + '"' + selected + ">" + label + "</option>";
+  }
+  return navTmpl.replace("{{VERSION_OPTIONS}}", options);
 }
 
 export function serve(outputDir: string, port: number, projectRoot?: string) {
@@ -81,7 +105,7 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
         if (!readmePath) return new Response("README not found (" + outputDir + ")", { status: 404 });
         const md = readFileSync(readmePath, "utf-8");
         const safe = JSON.stringify(md);
-        const nav = '<div class="nav"><a href="/">Reports</a><a href="/report-stage1.html">Stage 1</a><a href="/report-stage2.html">Stage 2</a><a href="/docs">Docs</a></div>';
+        const nav = generateNavBar(outputDir);
         const page = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>fork-scanner Docs</title><link rel="stylesheet" href="/github-dark.min.css"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0f23;color:#eaeaea;line-height:1.7;max-width:900px;margin:0 auto;padding:32px 24px}a{color:#5e7ce2;padding:0 4px}code{background:#1a1a3e;padding:2px 6px;border-radius:4px}pre{background:#1a1a3e;padding:16px;border-radius:8px;overflow-x:auto}.nav{display:flex;gap:16px;margin-bottom:24px;padding:12px;background:#1a1a3e;border-radius:8px}.nav a{color:#5e7ce2;text-decoration:none;font-weight:600}</style></head><body>' + nav + '<div id="content">Loading...</div><script src="/marked.min.js"></script><script src="/highlight.min.js"></script><script>hljs.highlightAll();fetch("/readme.md").then(r=>r.text()).then(md=>{document.getElementById("content").innerHTML=marked.parse(md);document.querySelectorAll("pre code").forEach(b=>hljs.highlightElement(b));}).catch(()=>{document.getElementById("content").innerHTML="<pre>"+safe+"</pre>";});</script></body></html>';
         return new Response(page, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
       }
@@ -122,6 +146,7 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
         let html = existsSync(tmplPath) ? readFileSync(tmplPath, "utf-8") : "";
         if (html) {
           const sorted = sortReports(reports);
+          html = html.replace("{{NAV_BAR}}", generateNavBar(outputDir));
           html = html.replace("{{REPOS_JSON}}", JSON.stringify(sorted));
           html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
           return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
@@ -148,6 +173,14 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
       const ext = filePath.split(".").pop() || "";
       const types: Record<string, string> = { html: "text/html;charset=utf-8", js: "application/javascript", css: "text/css", json: "application/json" };
       let body = readFileSync(filePath);
+      // Inject navigation bar
+      if (ext === "html") {
+        let str = body.toString();
+        if (str.includes("{{NAV_BAR}}")) {
+          str = str.replace("{{NAV_BAR}}", generateNavBar(outputDir, url.pathname.replace(/^\//, "")));
+          body = Buffer.from(str);
+        }
+      }
       // Inject notes into static HTML reports so old files show checkboxes + notes
       if (ext === "html" && (url.pathname.includes("report-stufe") || url.pathname.includes("report-stage"))) {
         try {

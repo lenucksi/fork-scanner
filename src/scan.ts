@@ -21,7 +21,7 @@ export async function fetchForks(repo: string, outputDir: string): Promise<Fork[
 }
 
 /** Per-branch full upstream compare with optional incremental SHA cross-ref for _is_new flagging */
-async function scanForkBranches(
+export async function scanForkBranches(
   repo: string,
   fork: Fork,
   oldShaMap?: Map<string, Set<string>>,

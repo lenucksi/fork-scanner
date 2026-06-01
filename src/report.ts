@@ -89,6 +89,7 @@ export function generateStage2Report(
         tags: r.tags, value: r.value_assessment, upstream: r.upstreamability,
         focus: r.main_focus, has_code: r.has_code_changes,
         _updates: r._updates,
+        _change: f?._change || "unchanged",
         max_ahead: f?.max_ahead ?? 0, pushed_at: f?.pushed_at ?? "",
         files: allFiles.length,
         adds: allFiles.reduce((s, f2) => s + (f2.additions || 0), 0),
@@ -167,6 +168,10 @@ export function generateLanding(reports: any[], outputDir: string) {
     );
 
   let html = loadTemplate("landing");
+  // Inject nav bar for static export (gh-pages) - no version dropdown
+  const navTmpl = readFileSync(join(TEMPLATE_DIR, "nav.html"), "utf-8");
+  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
+  html = html.replace("{{NAV_BAR}}", navHtml);
   html = html.replace("{{REPOS_JSON}}", JSON.stringify(flat));
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
   writeFileSync(join(outputDir, "index.html"), html);

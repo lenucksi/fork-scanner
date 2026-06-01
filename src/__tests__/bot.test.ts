@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect } from "bun:test";
 import { isBotCommit, BOT_PATTERNS } from "../utils/bot.js";
 

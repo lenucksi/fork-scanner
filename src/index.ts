@@ -7,8 +7,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { resolveToken } from "./config.js";
-import { fetchForks, scanBranches } from "./scan.js";
+import { fetchForks, scanBranches, scanForkBranches, detectChanges, buildOldShaMap } from "./scan.js";
 import { analyze } from "./analyze.js";
+import type { BranchCompare, Fork, ForkAnalysis } from "./utils/types.js";
 import { matchPRs } from "./pr-check.js";
 import { prepareDeepInputs, mergeDeepResults } from "./deep.js";
 import { generateStage1Report, generateStage2Report } from "./report.js";
@@ -16,6 +17,7 @@ import { exportGhPages } from "./gh-pages.js";
 
 
 interface Args {
+  _: (string | number)[];
   repo: string;
   output: string;
   deep: boolean;
@@ -51,7 +53,7 @@ async function main() {
     .version(false)
     .parse() as Args;
 
-  const repo = argv.repo || "";
+  const repo = argv.repo || (argv._[0] as string) || "";
   const outputDir = argv.output;
   const isDeep = argv.deep || !!argv["llm-key"] || !!process.env.ANTHROPIC_API_KEY;
 
@@ -98,11 +100,89 @@ async function main() {
     return;
   }
 
-  // Serve-only mode (no repo or merge-deep needed)
-  if (argv.serve && !argv["merge-deep"]) {
+  // Serve-only mode (no repo, merge-deep, or incremental needed)
+  if (argv.serve && !argv["merge-deep"] && !argv.incremental) {
     startServer(outputDir, argv.port);
     return;
   }
+
+  // ---- INCREMENTAL SCAN PATH ----
+  if (argv.incremental) {
+    if (!repo) {
+      console.error("Error: repo required for incremental scan");
+      process.exit(1);
+    }
+    console.log("  Repo: " + repo + "\n");
+
+    const { loadForks, loadCompareJsonl, mergeIncrementalCompare, saveCompareJsonl } = await import("./utils/state.js");
+    const oldForks = loadForks(outputDir);
+    const oldCompare = loadCompareJsonl(outputDir);
+    const oldShaIdx = buildOldShaMap(oldCompare);
+
+    if (oldForks.length === 0) {
+      console.log("  No prior scan data found. Running full scan.\n");
+    } else {
+      console.log("  Incremental mode: detecting changes since last scan\n");
+
+      const freshForks = await fetchForks(repo, outputDir);
+
+      const { newForks, updatedForks, unchangedForks } = detectChanges(freshForks, oldForks, oldShaIdx);
+      const changedForks = [...newForks, ...updatedForks];
+      console.log("  " + newForks.length + " new, " + updatedForks.length + " updated, " + unchangedForks.length + " unchanged");
+
+      if (changedForks.length === 0) {
+        console.log("  No changes detected. Re-generating reports from existing data.\n");
+        // Re-generate reports with updated templates
+        const existingAnalysis = JSON.parse(readFileSync(join(outputDir, "analysis.json"), "utf-8"));
+        const existingForks = loadForks(outputDir);
+        const existingCompare = loadCompareJsonl(outputDir);
+        generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, argv.versioned);
+        if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"));
+        if (argv.serve) startServer(outputDir, argv.port);
+        return;
+      }
+
+      const oldShaMap = buildOldShaMap(oldCompare);
+      const newCompare: BranchCompare[] = [];
+
+      console.log("  Scanning " + changedForks.length + " changed forks...");
+      for (let i = 0; i < changedForks.length; i++) {
+        const fork = changedForks[i];
+        const results = await scanForkBranches(repo, fork, oldShaMap);
+        for (const r of results) newCompare.push(r);
+        const interesting = results.filter((r) => r.ahead_by > 0 || r.behind_by > 0);
+        const status = interesting.length > 0
+          ? interesting.map((r) => r.branch + "(" + r.ahead_by + "a/" + r.behind_by + "b)").join(", ")
+          : "= identical";
+        console.log("  [" + (i + 1) + "/" + changedForks.length + "] " + fork.full_name + " " + status);
+      }
+
+      const { merged, changes } = mergeIncrementalCompare(oldCompare, newCompare);
+      saveCompareJsonl(outputDir, merged);
+
+      const analysisData = analyze(freshForks, merged, outputDir, changes);
+
+      const allOwners = [...new Set([...oldForks, ...freshForks].map((f: Fork) => f.owner))];
+      const prMap = await matchPRs(repo, allOwners, outputDir);
+
+      generateStage1Report(freshForks, merged, analysisData, outputDir, argv.versioned);
+
+      const interesting = analysisData.filter((f: ForkAnalysis) => !f.is_bot_only && f.max_ahead > 0);
+      console.log("\n  Incremental scan complete: " + interesting.length + " interesting forks");
+
+      if (argv["prepare-deep"]) {
+        prepareDeepInputs(analysisData, ["lenucksi/Backlog.md"], argv["deep-limit"], outputDir);
+        console.log("Deep input files prepared.");
+      }
+
+      if (argv["gh-pages"]) {
+        exportGhPages(outputDir, join(outputDir, "gh-pages"));
+      }
+      if (argv.serve) startServer(outputDir, argv.port);
+      return;
+    }
+  }
+
   // Full Stage 1 scan
   if (!repo) {
     console.error("Error: repo required (e.g., MrLesk/Backlog.md)\nRun with --interactive for wizard.");

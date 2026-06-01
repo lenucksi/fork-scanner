@@ -9,6 +9,8 @@ export function exportGhPages(outputDir: string, ghPagesDir: string) {
   if (!existsSync(ghPagesDir)) mkdirSync(ghPagesDir, { recursive: true });
 
   // Copy report files
+  const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
+  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
   for (const file of ["report-stage1.html", "report-stage2.html", "report-stage1-v1.html", "report-stage2-v1.html"]) {
     const src = join(outputDir, file);
     if (existsSync(src)) {
@@ -16,6 +18,8 @@ export function exportGhPages(outputDir: string, ghPagesDir: string) {
       // Remove interactive /save-note references (gh-pages is static)
       html = html.replace(/fetch\(['"]\/save-note['"][\s\S]*?\)\.catch\(\(\)=>{}\)\);/g, "");
       html = html.replace(/\/save-note/g, "#");
+      // Inject nav bar (static version, no dropdown)
+      html = html.replace("{{NAV_BAR}}", navHtml);
       writeFileSync(join(ghPagesDir, file), html);
     }
   }

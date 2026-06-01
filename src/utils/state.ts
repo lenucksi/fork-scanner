@@ -61,14 +61,14 @@ export function buildShaIndex(compare: BranchCompare[]): Map<string, {
  *   - Look up old shas via shaIndex
  *   - Flag new commits (_is_new) that don't appear in old shas
  *   - Detect force-push if old merge_base_sha differs and old shas partially missing
- * Returns merged array and change metadata map: fork+branch → { change, new_count, rewritten_count }
+ * Returns merged array and change metadata map: fork+branch → { change, new_commits, rewritten_commits }
  */
 export function mergeIncrementalCompare(
   oldData: BranchCompare[],
   newData: BranchCompare[],
-): { merged: BranchCompare[]; changes: Map<string, { change: "new" | "updated" | "rewritten"; new_count: number; rewritten_count: number }> } {
+): { merged: BranchCompare[]; changes: Map<string, { change: "new" | "updated" | "rewritten"; new_commits: number; rewritten_commits: number }> } {
   const shaIndex = buildShaIndex(oldData);
-  const changes = new Map<string, { change: "new" | "updated" | "rewritten"; new_count: number; rewritten_count: number }>();
+  const changes = new Map<string, { change: "new" | "updated" | "rewritten"; new_commits: number; rewritten_commits: number }>();
 
   // Start with old data, but remove entries that are superseded by new data
   const superseded = new Set<string>();
@@ -87,7 +87,7 @@ export function mergeIncrementalCompare(
     if (!oldIdx) {
       // Completely new fork+branch
       for (const c of entry.commits) c._is_new = true;
-      changes.set(key, { change: "new", new_count: entry.total_commits, rewritten_count: 0 });
+      changes.set(key, { change: "new", new_commits: entry.total_commits, rewritten_commits: 0 });
     } else {
       const oldShaSet = oldIdx.shas;
       const oldTip = oldIdx.tip_sha;
@@ -111,12 +111,12 @@ export function mergeIncrementalCompare(
 
       if (isRewrite) {
         rewrittenCount = oldShaSet.size;
-        changes.set(key, { change: "rewritten", new_count: newCount, rewritten_count: rewrittenCount });
+        changes.set(key, { change: "rewritten", new_commits: newCount, rewritten_commits: rewrittenCount });
       } else if (newCount > 0) {
-        changes.set(key, { change: "updated", new_count: newCount, rewritten_count: 0 });
+        changes.set(key, { change: "updated", new_commits: newCount, rewritten_commits: 0 });
       } else {
         // No actual new commits despite pushed_at change — treat as unchanged
-        changes.set(key, { change: "updated", new_count: 0, rewritten_count: 0 });
+        changes.set(key, { change: "updated", new_commits: 0, rewritten_commits: 0 });
       }
     }
 
