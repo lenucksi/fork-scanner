@@ -1,0 +1,21 @@
+.github/workflows/ci.yml
+  s_c463e112d7613e::t_5c8c3a2b891d88 1-21
+renovate.json
+  s_c463e112d7613e::t_303ad1929b7b5d 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "332bde5582d894705436b6e554f1422a3b2140a6",
+  "prompts": {},
+  "sessions": {
+    "s_c463e112d7613e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_18f334bd8ffeoA3wW8hyAwsDNC",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Lenucksi <lenucksi@users.noreply.github.com>"
+    }
+  }
+}
