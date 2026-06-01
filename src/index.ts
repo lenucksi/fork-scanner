@@ -134,8 +134,72 @@ async function main() {
   if (argv.serve) startServer(outputDir, argv.port);
 }
 
+import { createInterface } from "readline/promises";
+import { stdin, stdout } from "process";
+
+async function ask(query: string, def?: string): Promise<string> {
+  const rl = createInterface({ input: stdin, output: stdout });
+  const q = def ? `${query} [${def}]: ` : `${query}: `;
+  const answer = await rl.question(q);
+  rl.close();
+  return answer.trim() || def || "";
+}
+
 async function runInteractive(outputDir: string) {
-  console.log("\n  Interactive mode coming soon.\n  For now, use: fork-scan <repo> [options]");
+  console.log("\n  Fork Scanner -- Interactive Mode\n");
+
+  const repo = await ask("GitHub repo (e.g. MrLesk/Backlog.md)");
+  if (!repo) {
+    console.error("Repo required.");
+    process.exit(1);
+  }
+
+  const out = await ask("Output directory", outputDir);
+  const doDeep = (await ask("Run deep analysis?", "n")).toLowerCase() === "y";
+  const deepLimit = doDeep ? parseInt(await ask("Deep analysis limit", "30")) || 30 : 0;
+  const llmKey = doDeep ? await ask("Anthropic API key (or ENTER to skip)") : "";
+  const doServe = (await ask("Start report server?", "y")).toLowerCase() !== "n";
+  const port = doServe ? parseInt(await ask("Server port", "4099")) || 4099 : 0;
+
+  const argv: any = {
+    repo,
+    output: out,
+    deep: doDeep,
+    "deep-limit": deepLimit,
+    "llm-key": llmKey || undefined,
+    serve: doServe,
+    port,
+    "prepare-deep": false,
+    "merge-deep": undefined,
+    "gh-pages": false,
+    version: false,
+  };
+
+  if (!existsSync(argv.output)) mkdirSync(argv.output, { recursive: true });
+
+  resolveToken();
+  const forks = await fetchForks(repo, argv.output);
+  const allResults = await scanBranches(repo, forks, argv.output);
+  const analysisData = analyze(forks, allResults, argv.output);
+  const forkOwners = [...new Set(analysisData.map((f: any) => f.owner))];
+  const prMap = await matchPRs(repo, forkOwners, argv.output);
+
+  if (doDeep && llmKey) {
+    process.env.ANTHROPIC_API_KEY = llmKey;
+    console.log("  Deep analysis prepared. Use skill sub-agents or --deep flag.");
+  }
+
+  if (argv["prepare-deep"] || doDeep) {
+    const dl = argv["deep-limit"] || 30;
+    const analysis = JSON.parse(readFileSync(join(argv.output, "analysis.json"), "utf-8"));
+    const inputs = prepareDeepInputs(analysis, [], dl, argv.output);
+    console.log("  Prepared " + inputs.length + " deep-input files for sub-agents.");
+  }
+
+  generateStage1Report(forks, allResults, analysisData, argv.output, argv.version);
+  console.log("  Stage 1 report generated.");
+
+  if (doServe) startServer(argv.output, port);
 }
 
 function startServer(outputDir: string, port: number) {
