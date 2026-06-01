@@ -57,8 +57,16 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
         return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json", ...cors } });
       }
 
-      if (url.pathname === "/load-notes") {
-        return new Response(JSON.stringify(loadNotes()), { headers: { "Content-Type": "application/json", ...cors } });
+      if (url.pathname === "/load-notes" || url.pathname === "/api/notes") {
+        const notes = loadNotes();
+        return new Response(JSON.stringify(notes), { headers: { "Content-Type": "application/json", ...cors } });
+      }
+
+      const notesMatch = url.pathname.match(/^\/api\/notes\/(.+)$/);
+      if (notesMatch) {
+        const notes = loadNotes();
+        const fork = decodeURIComponent(notesMatch[1]);
+        return new Response(JSON.stringify(notes[fork] || { checked: false, note: "" }), { headers: { "Content-Type": "application/json", ...cors } });
       }
 
       if (url.pathname === "/docs" || url.pathname === "/docs/") {
@@ -119,7 +127,19 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
 
       const ext = filePath.split(".").pop() || "";
       const types: Record<string, string> = { html: "text/html;charset=utf-8", js: "application/javascript", css: "text/css", json: "application/json" };
-      return new Response(readFileSync(filePath), { headers: { "Content-Type": types[ext] || "application/octet-stream", ...cors } });
+      let body = readFileSync(filePath);
+      // Inject notes into static HTML reports so old files show checkboxes + notes
+      if (ext === "html" && (url.pathname.includes("report-stufe") || url.pathname.includes("report-stage"))) {
+        try {
+          const notes = loadNotes();
+          if (Object.keys(notes).length > 0) {
+            const json = JSON.stringify(notes).replace(/</g, "\u003c");
+            const str = body.toString().replace('</body>', '<script>try{localStorage.setItem("fork-notes",' + json + ');}catch(e){}</script></body>');
+            body = Buffer.from(str);
+          }
+        } catch {}
+      }
+      return new Response(body, { headers: { "Content-Type": types[ext] || "application/octet-stream", ...cors } });
     },
   });
 
