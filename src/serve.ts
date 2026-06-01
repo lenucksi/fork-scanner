@@ -100,14 +100,34 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
       }
 
       if (url.pathname === "/") {
-        const files = (await Array.fromAsync(new Bun.Glob("report-*.html").scan({ cwd: outputDir }))).sort();
-        const map = { stufe2: "Stage 2", stufe1: "Stage 1", stage2: "Stage 2", stage1: "Stage 1" };
-        const links = files
+        const { statSync } = await import("fs");
+        const files = await Array.fromAsync(new Bun.Glob("report-*.html").scan({ cwd: outputDir }));
+        const map: Record<string, string> = { stufe2: "Stage 2", stufe1: "Stage 1", stage2: "Stage 2", stage1: "Stage 1" };
+        
+        const reports = files
           .filter(f => !f.includes("-v0"))
           .map(f => {
-            const label = Object.entries(map).find(([k]) => f.includes(k))?.[1] || f;
-            return `<a href="/${f}" class="report-link">${label}</a>`;
-          }).join("");
+            const stage = Object.entries(map).find(([k]) => f.includes(k))?.[1] || "Report";
+            let timestamp = "";
+            try {
+              const mtime = statSync(join(outputDir, f)).mtime;
+              timestamp = mtime.toISOString();
+            } catch {}
+            return { name: stage, file: f, stage, timestamp };
+          });
+
+        // Render via landing template (same as generateLanding)
+        const templatesDir = join(__dirname, "..", "templates");
+        const tmplPath = join(templatesDir, "landing.html");
+        let html = existsSync(tmplPath) ? readFileSync(tmplPath, "utf-8") : "";
+        if (html) {
+          const sorted = sortReports(reports);
+          html = html.replace("{{REPOS_JSON}}", JSON.stringify(sorted));
+          html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
+          return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
+        }
+        // Fallback to simple listing
+        const links = reports.map(r => `<a href="/${r.file}" class="report-link">${r.name}${r.timestamp ? " (" + r.timestamp.slice(0, 10) + ")" : ""}</a>`).join("");
         const page = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Fork Scanner Reports</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0f23;color:#eaeaea;line-height:1.7;max-width:900px;margin:0 auto;padding:48px 24px;text-align:center}h1{font-size:2.5rem;margin-bottom:8px}.subtitle{color:#9ca3af;margin-bottom:48px}.links{display:flex;flex-direction:column;gap:12px;align-items:center}.report-link{display:inline-block;padding:16px 48px;background:#1a1a3e;border:1px solid #2d2d44;border-radius:12px;color:#5e7ce2;text-decoration:none;font-size:1.1rem;font-weight:600;transition:border-color .2s;min-width:300px}.report-link:hover{border-color:#5e7ce2}.nav{display:flex;gap:16px;justify-content:center;margin-top:48px}.nav a{color:#5e7ce2;text-decoration:none;font-weight:600;padding:8px 16px;background:#1a1a3e;border-radius:8px}</style></head><body><h1>🔬 Fork Scanner Reports</h1><div class="subtitle">' + outputDir.split("/").pop() + '</div><div class="links">' + links + '</div><div class="nav"><a href="/docs">Docs</a></div></body></html>';
         return new Response(page, { headers: { "Content-Type": "text/html;charset=utf-8", ...cors } });
       }
@@ -150,4 +170,29 @@ export function serve(outputDir: string, port: number, projectRoot?: string) {
   console.log("  Stage 2: http://localhost:" + actualPort + "/report-stage2.html");
   console.log("  Docs:    http://localhost:" + actualPort + "/docs");
   console.log("  Notes:   " + NOTES_FILE + "\n");
+}
+
+/** Sort reports: group by stage, newest first, number sequentially */
+function sortReports(reports: { name: string; file: string; timestamp: string; stage: string }[]): any[] {
+  const grouped = new Map<string, typeof reports>();
+  for (const r of reports) {
+    const stage = r.stage || "Report";
+    if (!grouped.has(stage)) grouped.set(stage, []);
+    grouped.get(stage)!.push(r);
+  }
+  for (const [, group] of grouped) {
+    group.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+  }
+  const flat: any[] = [];
+  const sortedGroups = [...grouped.entries()].sort((a, b) => {
+    const aMax = a[1][0]?.timestamp || "";
+    const bMax = b[1][0]?.timestamp || "";
+    return bMax.localeCompare(aMax);
+  });
+  for (const [stage, items] of sortedGroups) {
+    for (let i = 0; i < items.length; i++) {
+      flat.push({ ...items[i], stage, seq: items.length > 1 ? i + 1 : undefined });
+    }
+  }
+  return flat;
 }

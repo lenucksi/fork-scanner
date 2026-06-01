@@ -28,6 +28,8 @@ export interface CommitInfo {
   author_email: string | null;
   message: string;
   date: string | null;
+  /** Set during incremental merge: true if this commit is new since last scan */
+  _is_new?: boolean;
 }
 export interface FileChange {
   filename: string;
@@ -46,6 +48,10 @@ export interface ForkAnalysis {
   branches: BranchCompare[];
   cluster_group: string;
   pushed_category: string;
+  /** Incremental scan change tracking */
+  _change?: "new" | "updated" | "rewritten" | "unchanged";
+  _new_commits?: number;
+  _rewritten_commits?: number;
 }
 export interface DeepAnalysis {
   full_name: string;
@@ -56,6 +62,20 @@ export interface DeepAnalysis {
   main_focus: "feature" | "fix" | "config" | "docs" | "maintenance";
   upstreamability: number;
   value_assessment: "high" | "medium" | "low";
+  /** Incremental update history appended on each re-analysis */
+  _updates?: DeepAnalysisUpdate[];
+}
+
+export interface DeepAnalysisUpdate {
+  date: string;
+  change: "new" | "updated" | "rewritten";
+  new_commits: number;
+  rewritten_commits?: number;
+  analysis: string;
+  value_assessment?: "high" | "medium" | "low";
+  upstreamability?: number;
+  /** True for the most recent update run */
+  _is_current?: boolean;
 }
 export interface DeepInput {
   full_name: string;
@@ -64,6 +84,10 @@ export interface DeepInput {
   max_ahead: number;
   max_behind: number;
   pushed_category: string;
+  /** Change context from incremental scan */
+  _change?: "new" | "updated" | "rewritten";
+  _new_commits?: number;
+  _rewritten_commits?: number;
   branches: {
     name: string;
     ahead_by: number;

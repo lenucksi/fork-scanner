@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Fork Analysis — Stage 1</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="/chart.umd.min.js"></script>
 <style>
 :root{--bg:#f8f9fa;--surface:#fff;--text:#1a1a2e;--text-secondary:#555;--border:#dee2e6;--accent:#4361ee;--accent-light:#eef0ff;--green:#2ec4b6;--orange:#ff9f1c;--purple:#7209b7}
 @media(prefers-color-scheme:dark){:root{--bg:#0f0f23;--surface:#1a1a2e;--text:#eaeaea;--text-secondary:#9ca3af;--border:#2d2d44;--accent:#5e7ce2;--accent-light:#1a1a3e}}
@@ -27,6 +27,12 @@ tr:hover{background:var(--accent-light)}
 .badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.75rem;background:var(--accent-light);color:var(--accent)}
 .pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:0.78rem;font-weight:600}
 .pill-human{background:#d4edda;color:#155724}.pill-bot{background:#e2e3e5;color:#383d41}
+.pill-new{background:#d4edda;color:#155724;border:1px solid #2ec4b6}
+.pill-updated{background:#fff3cd;color:#856404;border:1px solid #ff9f1c}
+.pill-rewritten{background:#f8d7da;color:#721c24;border:1px solid #e83e8c}
+.row-new{border-left:4px solid #2ec4b6 !important}
+.row-updated{border-left:4px solid #ff9f1c !important}
+.row-rewritten{border-left:4px solid #e83e8c !important}
 details{margin:8px 0}
 details summary{cursor:pointer;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-weight:600}
 details[open] summary{border-radius:8px 8px 0 0}
@@ -64,12 +70,20 @@ document.getElementById("statsGrid").innerHTML = Object.entries(D.stats).map(([k
 
 document.getElementById("interestingCount").textContent = D.interesting.length + " forks with human-authored changes ahead of upstream";
 
+function changeBadge(change, newCount, rewrittenCount) {
+  if (change === "new") return `<span class="pill pill-new">New</span>`;
+  if (change === "updated" && newCount) return `<span class="pill pill-updated">▲ ${newCount} new</span>`;
+  if (change === "rewritten") return `<span class="pill pill-rewritten">⚠ Rewritten${rewrittenCount ? " ("+rewrittenCount+")" : ""}</span>`;
+  return "";
+}
+
 document.getElementById("forkTableBody").innerHTML = D.interesting.map(f => {
   const allFiles = f.branches.flatMap(b => b.files || []);
   const adds = allFiles.reduce((s,f2) => s+(f2.additions||0),0);
   const dels = allFiles.reduce((s,f2) => s+(f2.deletions||0),0);
-  return `<tr>
-    <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a></td>
+  const rowCls = f._change === "new" ? "row-new" : f._change === "updated" ? "row-updated" : f._change === "rewritten" ? "row-rewritten" : "";
+  return `<tr class="${rowCls}">
+    <td><a href="https://github.com/${esc(f.full_name)}" target="_blank"><strong>${esc(f.full_name)}</strong></a> ${changeBadge(f._change, f._new_commits, f._rewritten_commits)}</td>
     <td>${f.pushed_at ? new Date(f.pushed_at).toISOString().slice(0,10) : "?"}</td>
     <td>${f.branches.map(b => `<span style="font-family:monospace;font-size:0.8rem">${esc(b.branch)}</span> <span class="badge">+${b.ahead_by}/-${b.behind_by}</span>`).join(" ")}</td>
     <td>+${f.max_ahead}</td><td>-${f.max_behind}</td>

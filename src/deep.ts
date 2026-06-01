@@ -52,6 +52,9 @@ export function prepareDeepInputs(
       max_ahead: fork.max_ahead,
       max_behind: fork.max_behind,
       pushed_category: fork.pushed_category,
+      _change: fork._change === "unchanged" ? undefined : fork._change,
+      _new_commits: fork._new_commits,
+      _rewritten_commits: fork._rewritten_commits,
       branches: interestingBranches.map((b: any) => ({
         name: b.branch,
         ahead_by: b.ahead_by,
@@ -102,7 +105,26 @@ export function mergeDeepResults(
       const fp = join(dir, "batch" + i + ".json");
       if (existsSync(fp)) {
         const batch: DeepAnalysis[] = JSON.parse(readFileSync(fp, "utf-8"));
-        for (const r of batch) result.set(r.full_name, r);
+        for (const r of batch) {
+          // Preserve _updates history: if fork already has an entry,
+          // push the old entry's data into _updates before overwriting
+          const existing = result.get(r.full_name);
+          if (existing) {
+            const update = {
+              date: new Date().toISOString(),
+              change: "updated" as "new" | "updated" | "rewritten",
+              new_commits: 0,
+              analysis: r.description,
+              value_assessment: r.value_assessment,
+              upstreamability: r.upstreamability,
+              _is_current: true,
+            };
+            // Preserve previous updates from existing entry
+            const previousUpdates = existing._updates || [];
+            r._updates = [...previousUpdates, update];
+          }
+          result.set(r.full_name, r);
+        }
       }
     }
   }

@@ -27,7 +27,8 @@ interface Args {
   "prepare-deep": boolean;
   "merge-deep": string | null;
   "gh-pages": boolean;
-  version: boolean;
+  incremental: boolean;
+  versioned: boolean;
 }
 
 async function main() {
@@ -45,7 +46,9 @@ async function main() {
     .option("prepare-deep", { type: "boolean", default: false, describe: "Stage 1 + prepare deep-input files" })
     .option("merge-deep", { type: "string", describe: "Deep output dir to merge into report" })
     .option("gh-pages", { type: "boolean", default: false, describe: "Export static GH Pages site" })
-    .option("version", { alias: "v", type: "boolean", default: false, describe: "Versioned output files" })
+    .option("incremental", { type: "boolean", default: false, describe: "Incremental: only re-scan changed forks" })
+    .option("versioned", { alias: "v", type: "boolean", default: false, describe: "Versioned output files" })
+    .version(false)
     .parse() as Args;
 
   const repo = argv.repo || "";
@@ -75,7 +78,18 @@ async function main() {
     }
     const analysisData = JSON.parse(readFileSync(analysisPath, "utf-8"));
     const deepMap = mergeDeepResults(analysisData, argv["merge-deep"]);
-    generateStage2Report([], [], analysisData, outputDir, deepMap, new Map(), argv.version, {});
+    const forksData = existsSync(join(outputDir, "forks.json"))
+      ? JSON.parse(readFileSync(join(outputDir, "forks.json"), "utf-8")) : [];
+    let prsData = new Map<string, any[]>();
+    try {
+      const prsRaw = JSON.parse(readFileSync(join(outputDir, "prs.json"), "utf-8"));
+      if (Array.isArray(prsRaw) && prsRaw.length > 0 && prsRaw[0].full_name) {
+        prsData = new Map(prsRaw.map((p: any) => [p.full_name, p.prs || []]));
+      }
+    } catch {}
+    const notesData = existsSync(join(outputDir, "notes.json"))
+      ? JSON.parse(readFileSync(join(outputDir, "notes.json"), "utf-8")) : {};
+    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, argv.versioned, notesData);
     console.log("Stage 2 report generated with " + deepMap.size + " deep analyses.");
     if (argv["gh-pages"]) {
       exportGhPages(outputDir, join(outputDir, "gh-pages"));
@@ -106,7 +120,7 @@ async function main() {
   const prMap = await matchPRs(repo, forkOwners, outputDir);
 
   // Report
-  generateStage1Report(forks, allResults, analysisData, outputDir, argv.version);
+  generateStage1Report(forks, allResults, analysisData, outputDir, argv.versioned);
 
   const interesting = analysisData.filter((f) => !f.is_bot_only && f.max_ahead > 0);
   console.log("\n  Stage 1 complete: " + interesting.length + " interesting forks");
@@ -172,7 +186,7 @@ async function runInteractive(outputDir: string) {
     "prepare-deep": false,
     "merge-deep": undefined,
     "gh-pages": false,
-    version: false,
+    versioned: false,
   };
 
   if (!existsSync(argv.output)) mkdirSync(argv.output, { recursive: true });
@@ -196,7 +210,7 @@ async function runInteractive(outputDir: string) {
     console.log("  Prepared " + inputs.length + " deep-input files for sub-agents.");
   }
 
-  generateStage1Report(forks, allResults, analysisData, argv.output, argv.version);
+  generateStage1Report(forks, allResults, analysisData, argv.output, argv.versioned);
   console.log("  Stage 1 report generated.");
 
   if (doServe) startServer(argv.output, port);

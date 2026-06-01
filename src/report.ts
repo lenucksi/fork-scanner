@@ -52,6 +52,7 @@ export function generateStage1Report(
     pushedLabels, pushedValues,
     interesting: interesting.map((s) => ({
       full_name: s.full_name, pushed_at: s.pushed_at, max_ahead: s.max_ahead, max_behind: s.max_behind,
+      _change: s._change, _new_commits: s._new_commits, _rewritten_commits: s._rewritten_commits,
       branches: s.branches.map((b) => ({ branch: b.branch, ahead_by: b.ahead_by, behind_by: b.behind_by, files: b.files })),
     })),
   };
@@ -87,6 +88,7 @@ export function generateStage2Report(
         full_name: name, title: r.title, description: r.description,
         tags: r.tags, value: r.value_assessment, upstream: r.upstreamability,
         focus: r.main_focus, has_code: r.has_code_changes,
+        _updates: r._updates,
         max_ahead: f?.max_ahead ?? 0, pushed_at: f?.pushed_at ?? "",
         files: allFiles.length,
         adds: allFiles.reduce((s, f2) => s + (f2.additions || 0), 0),
@@ -138,8 +140,34 @@ export function generateStage2Report(
 }
 
 export function generateLanding(reports: any[], outputDir: string) {
+  // Sort by timestamp descending, group by stage, number sequentially
+  const grouped = new Map<string, { name: string; file: string; timestamp: string; stage: string; }[]>();
+  for (const r of reports) {
+    const stage = r.stage || (r.file || "").includes("stage2") ? "Stage 2" : "Stage 1";
+    if (!grouped.has(stage)) grouped.set(stage, []);
+    grouped.get(stage)!.push(r);
+  }
+  for (const [, group] of grouped) {
+    group.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+  }
+
+  // Flatten: all stages interleaved, newest first
+  const flat = [...grouped.entries()]
+    .sort((a, b) => {
+      const aMax = a[1][0]?.timestamp || "";
+      const bMax = b[1][0]?.timestamp || "";
+      return bMax.localeCompare(aMax);
+    })
+    .flatMap(([stage, items]) =>
+      items.map((r, i) => ({
+        ...r,
+        stage,
+        seq: items.length > 1 ? i + 1 : undefined,
+      }))
+    );
+
   let html = loadTemplate("landing");
-  html = html.replace("{{REPOS_JSON}}", JSON.stringify(reports));
+  html = html.replace("{{REPOS_JSON}}", JSON.stringify(flat));
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
   writeFileSync(join(outputDir, "index.html"), html);
   console.log("Landing page: " + join(outputDir, "index.html"));
