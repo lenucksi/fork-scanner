@@ -26,7 +26,7 @@ function findFreePort(start: number): number {
 }
 
 
-function generateNavBar(outputDir: string, currentFile?: string): string {
+export function generateNavBar(outputDir: string, currentFile?: string): string {
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
   const reports: string[] = [];
   try {
