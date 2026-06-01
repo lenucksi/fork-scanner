@@ -8,12 +8,16 @@ export function resolveToken(): string {
   try {
     return execSync("gh auth token", { encoding: "utf-8" }).trim();
   } catch {
-    console.error("FATAL: Need GH_TOKEN, GITHUB_TOKEN, or `gh auth login`");
-    process.exit(1);
+    throw new Error("Need GH_TOKEN, GITHUB_TOKEN, or `gh auth login`");
   }
 }
 
-export const GITHUB_TOKEN = resolveToken();
+let _token: string | null = null;
+export function getToken(): string {
+  if (_token) return _token;
+  _token = resolveToken();
+  return _token;
+}
 
 export const UPSTREAM_BRANCH = "main";
 

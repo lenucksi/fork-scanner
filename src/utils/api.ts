@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { GITHUB_TOKEN } from "../config.js";
+import { getToken } from "../config.js";
 
 const API_BASE = "https://api.github.com";
 const MAX_RETRIES = 5;
 
 export async function apiFetch(path: string, retries = MAX_RETRIES): Promise<any> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const token = getToken();
   for (let attempt = 0; attempt < retries; attempt++) {
     const resp = await fetch(url, {
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "fork-scanner",
       },
