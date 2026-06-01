@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync } from "fs";
 import { join } from "path";
 import { generateLanding } from "./report.js";
 import { dirname } from "path";
@@ -10,17 +10,46 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
   if (subpath) ghPagesDir = join(ghPagesDir, subpath);
   if (!existsSync(ghPagesDir)) mkdirSync(ghPagesDir, { recursive: true });
 
+  // Build version dropdown options from reports in the output directory
+  let optionsHtml = "";
+  const reportPattern = /^report-stage\d+(-v\d+)?\.html$/;
+  const allReports: string[] = [];
+  try {
+    for (const f of readdirSync(outputDir)) {
+      if (reportPattern.test(f)) allReports.push(f);
+    }
+  } catch {}
+  allReports.sort();
+
+  for (const r of allReports) {
+    const fp = join(outputDir, r);
+    if (!existsSync(fp)) continue;
+    let runLabel = "", changeCount = 0;
+    try {
+      const content = readFileSync(fp, "utf-8");
+      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+      if (m) {
+        const parts = m[1].split(",");
+        runLabel = parts[0] === "inc" ? "[Inc]" : "[Full]";
+        changeCount = parseInt(parts[1], 10) || 0;
+      }
+    } catch {}
+    const label = [runLabel, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
+    // For the nav dropdown, use a relative path prefix
+    const relativePath = subpath ? join(subpath, r) : r;
+    optionsHtml += '<option value="/' + relativePath + '">' + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
+  }
+
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
-  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
+  const navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", optionsHtml);
+
   for (const file of ["report-stage1.html", "report-stage2.html", "report-stage1-v1.html", "report-stage2-v1.html"]) {
     const src = join(outputDir, file);
     if (existsSync(src)) {
       let html = readFileSync(src, "utf-8");
       html = html.replace(/fetch\(['"]\/save-note['"][\s\S]*?\)\.catch\(\(\)=>{}\)\);/g, "");
       html = html.replace(/\/save-note/g, "#");
-      // Strip leading / from asset paths for subdirectory deployment
       html = html.replace(/(src|href)="\/(chart\.umd\.min\.js|highlight\.min\.js|marked\.min\.js|github-dark\.min\.css)"/g, '$1="$2"');
-      // Strip user notes unless --gh-pages-notes was passed
       if (stripNotes) {
         html = html.replace(/window\.__DATA__\s*=\s*(\{.*?\});/s, (match: string, dataStr: string) => {
           try {

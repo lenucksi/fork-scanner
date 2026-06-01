@@ -1,10 +1,11 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Fork Analysis — Stage 2</title>
-<script src="/chart.umd.min.js"></script>
+<script src="chart.umd.min.js"></script>
 <style>
 :root{--bg:#f8f9fa;--surface:#fff;--text:#1a1a2e;--text-secondary:#555;--border:#dee2e6;--accent:#4361ee;--accent-light:#eef0ff;--green:#2ec4b6;--orange:#ff9f1c;--purple:#7209b7;--pink:#e83e8c}
 @media(prefers-color-scheme:dark){:root{--bg:#0f0f23;--surface:#1a1a2e;--text:#eaeaea;--text-secondary:#9ca3af;--border:#2d2d44;--accent:#5e7ce2;--accent-light:#1a1a3e}}
@@ -64,7 +65,7 @@ tr:hover{background:var(--accent-light)}
 {{NAV_BAR}}
 <div class="container">
 <h1>Fork Analysis — Stage 2</h1>
-<p style="color:var(--text-secondary);margin-bottom:24px">{{TOTAL_FORKS}} forks · {{REPO}} · {{DATE}}</p>
+<p style="color:var(--text-secondary);margin-bottom:24px">{{RUN_TYPE}} · {{TOTAL_FORKS}} forks · {{REPO}} · {{DATE}}</p>
 
 <div class="stats-grid" id="statsGrid"></div>
 <div class="charts-row">
