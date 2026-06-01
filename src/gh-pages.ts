@@ -61,15 +61,15 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
     interesting = data.filter((d: any) => !d.is_bot_only && d.max_ahead > 0).length;
   } catch {}
 
-  reports.push({
-    name: outputDir.split("/").pop() || "scan-output",
-    dir: ".",
-    stage1: stage1 ? "report-stage1.html" : null,
-    stage2: stage2 ? "report-stage2.html" : null,
-    forks,
-    interesting,
-    date: new Date().toISOString().slice(0, 10),
-  });
+  const now = new Date().toISOString();
+  if (stage1) reports.push({ file: "report-stage1.html", stage: "Stage 1", timestamp: now, forks, interesting });
+  if (stage2) reports.push({ file: "report-stage2.html", stage: "Stage 2", timestamp: now, forks, interesting });
+  for (const vFile of ["report-stage1-v1.html", "report-stage2-v1.html"]) {
+    if (existsSync(join(ghPagesDir, vFile))) {
+      const s = vFile.includes("stage2") ? "Stage 2" : "Stage 1";
+      reports.push({ file: vFile, stage: s, timestamp: now, forks, interesting });
+    }
+  }
 
   generateLanding(reports, ghPagesDir);
 
