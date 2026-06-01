@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import type { Fork, BranchCompare, ForkAnalysis, DeepAnalysis, PRInfo } from "./utils/types.js";
 import { categorizePushed, PUSHED_LABELS } from "./config.js";
-import { parseTimestampFromFilename, formatTimestamp, makeOptionLabel } from "./utils/report-ui.js";
+import { parseTimestampFromFilename, formatTimestamp, makeOptionLabel, pad2 } from "./utils/report-ui.js";
 
 
 const __dirname = dirname(new URL(import.meta.url).pathname);
@@ -98,13 +98,16 @@ export function generateStage1Report(
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
   const runType1 = interesting.some((f: ForkAnalysis) => f._change !== undefined) ? "inc" : "full";
-  html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
+  const now1 = new Date();
+  html = html.replace("{{DATE}}",
+    now1.getFullYear() + "-" + pad2(now1.getMonth() + 1) + "-" + pad2(now1.getDate()) + " " +
+    pad2(now1.getHours()) + ":" + pad2(now1.getMinutes()));
   html = html.replace("{{RUN_TYPE}}", runType1 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
 
   const runType = runType1;
   const changeCount = interesting.filter((f: ForkAnalysis) => f._change !== undefined && f._change !== "unchanged").length;
-  const nowISO = new Date().toISOString();
+  const nowISO = now1.toISOString();
   const parent = runType === "inc" ? findLatestReport(outputDir, 1) : null;
   const parentRef = parent ? `,based-on:${parent.filename}` : "";
   html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + ',' + nowISO + parentRef + '">\n</head>');
@@ -179,13 +182,16 @@ export function generateStage2Report(
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
   const runType2 = ordered.some((f: any) => f._change && f._change !== "unchanged") ? "inc" : "full";
-  html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
+  const now2 = new Date();
+  html = html.replace("{{DATE}}",
+    now2.getFullYear() + "-" + pad2(now2.getMonth() + 1) + "-" + pad2(now2.getDate()) + " " +
+    pad2(now2.getHours()) + ":" + pad2(now2.getMinutes()));
   html = html.replace("{{RUN_TYPE}}", runType2 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
 
   const runType = runType2;
   const changeCount = ordered.filter((f: any) => f._change && f._change !== "unchanged").length;
-  const nowISO = new Date().toISOString();
+  const nowISO = now2.toISOString();
   const parent = runType === "inc" ? findLatestReport(outputDir, 2) : null;
   const parentRef = parent ? `,based-on:${parent.filename}` : "";
   html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + ',' + nowISO + parentRef + '">\n</head>');

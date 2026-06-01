@@ -22,7 +22,7 @@ export function parseTimestampFromFilename(filename: string): string {
   return m ? m[1] + "T00:00:00.000Z" : "";
 }
 
-function pad2(n: number): string {
+export function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
