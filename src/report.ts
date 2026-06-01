@@ -4,14 +4,11 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import type { Fork, BranchCompare, ForkAnalysis, DeepAnalysis, PRInfo } from "./utils/types.js";
 import { categorizePushed, PUSHED_LABELS } from "./config.js";
+import { parseTimestampFromFilename, formatTimestamp, makeOptionLabel } from "./utils/report-ui.js";
+
 
 const __dirname = dirname(new URL(import.meta.url).pathname);
 const TEMPLATE_DIR = join(__dirname, "..", "templates");
-
-function parseTimestampFromFilename(filename: string): string {
-  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] + "T00:00:00.000Z" : "";
-}
 
 function loadTemplate(name: string): string {
   return readFileSync(join(TEMPLATE_DIR, name + ".html"), "utf-8");
@@ -231,10 +228,9 @@ export function generateLanding(reports: any[], outputDir: string) {
   let versionOptions = "";
   for (const r of reports) {
     if (!r.file) continue;
-    const runLabel = r.runType === "inc" ? "[Inc]" : "[Full]";
-    const dateStr = r.timestamp ? (() => { try { const d = new Date(r.timestamp); if (!isNaN(d.getTime())) return String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch {} return ""; })() : "";
-    const stageLabel = "[Stage " + (r.stage === "Stage 2" ? "2" : "1") + "] ";
-    const label = [stageLabel + runLabel, dateStr, (r.changeCount || 0) > 0 ? "· " + r.changeCount + " changes" : ""].filter(Boolean).join(" ");
+    const dateStr = formatTimestamp(r.timestamp || "");
+    const stage = r.stage === "Stage 2" ? "2" : "1";
+    const label = makeOptionLabel(r.runType || "full", dateStr, r.changeCount || 0, stage);
     versionOptions += '<option value="' + r.file + '">' + (label || r.file.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }
   let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", versionOptions);

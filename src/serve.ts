@@ -5,6 +5,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import { join } from "path";
 import { execSync } from "child_process";
+import { REPORT_PATTERN, parseMetaTimestamp, parseTimestampFromFilename, formatTimestamp, formatMtime, getReportMeta, makeOptionLabel, findLatestByStage, getReportStage } from "./utils/report-ui.js";
+
 
 interface Notes { [forkName: string]: { checked: boolean; note: string } }
 
@@ -23,33 +25,13 @@ function findFreePort(start: number): number {
   }
 }
 
-const REPORT_PATTERN = /^report-stage\d+-(full|inc)-\d{4}-\d{2}-\d{2}(-from-\d{4}-\d{2}-\d{2})?\.html$/;
-
-function parseMetaTimestamp(fp: string): string {
-  try {
-    const content = readFileSync(fp, "utf-8");
-    const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
-    if (m) {
-      const parts = m[1].split(",");
-      return parts[2] || "";
-    }
-  } catch {}
-  return "";
-}
-
-function parseTimestampFromFilename(filename: string): string {
-  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] + "T00:00:00.000Z" : "";
-}
 
 function generateNavBar(outputDir: string, currentFile?: string): string {
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
   const reports: string[] = [];
   try {
     for (const f of readdirSync(outputDir)) {
-      if (REPORT_PATTERN.test(f)) {
-        reports.push(f);
-      }
+      if (REPORT_PATTERN.test(f)) reports.push(f);
     }
   } catch {}
   reports.sort((a, b) => {
@@ -60,58 +42,18 @@ function generateNavBar(outputDir: string, currentFile?: string): string {
     catch { return 0; }
   });
 
-  let latestStage1 = "report-stage1.html";
-  let latestStage2 = "report-stage2.html";
-  for (const r of reports) {
-    const stage = (r.match(/^report-stage(\d+)/) || [])[1];
-    if (stage === "1" && latestStage1 === "report-stage1.html") latestStage1 = r;
-    if (stage === "2" && latestStage2 === "report-stage2.html") latestStage2 = r;
-  }
-
-  const currentStage = currentFile ? (currentFile.match(/^report-stage(\d+)/) || [])[1] : "";
+  const latestStage1 = findLatestByStage(reports, outputDir, "1");
+  const latestStage2 = findLatestByStage(reports, outputDir, "2");
+  const currentStage = currentFile ? getReportStage(currentFile) : "";
   let options = "";
   for (const r of reports) {
-    const fp = join(outputDir, r);
-    const rStage = (r.match(/^report-stage(\d+)/) || [])[1];
+    const rStage = getReportStage(r);
     if (currentStage && rStage !== currentStage) continue;
-
-    let runLabel = "", changeCount = 0;
-    try {
-      const content = readFileSync(fp, "utf-8");
-      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
-      if (m) {
-        const parts = m[1].split(",");
-        runLabel = parts[0] === "inc" ? "[Inc]" : "[Full]";
-        changeCount = parseInt(parts[1], 10) || 0;
-      }
-    } catch {}
-
-    let dateStr = "";
+    const fp = join(outputDir, r);
+    const meta = getReportMeta(fp);
     const ts = parseMetaTimestamp(fp);
-    if (ts) {
-      const d = new Date(ts);
-      if (!isNaN(d.getTime())) {
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const hh = String(d.getHours()).padStart(2, "0");
-        const mi = String(d.getMinutes()).padStart(2, "0");
-        dateStr = mm + "-" + dd + " " + hh + ":" + mi;
-      }
-    }
-    if (!dateStr) {
-      try {
-        const d = statSync(fp).mtime;
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const hh = String(d.getHours()).padStart(2, "0");
-        const mi = String(d.getMinutes()).padStart(2, "0");
-        dateStr = mm + "-" + dd + " " + hh + ":" + mi;
-      } catch {}
-    }
-
-    const stageLabel = currentStage ? "" : "[Stage " + rStage + "] ";
-    const parts2 = [stageLabel + runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean);
-    const label = parts2.join(" ");
+    const dateStr = ts ? formatTimestamp(ts) : formatMtime(fp);
+    const label = makeOptionLabel(meta.runType, dateStr, meta.changeCount, rStage, currentStage);
     const selected = r === currentFile ? " selected" : "";
     options += '<option value="/' + r + '"' + selected + ">" + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }

@@ -4,26 +4,10 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync
 import { join } from "path";
 import { generateLanding } from "./report.js";
 import { dirname } from "path";
+import { REPORT_PATTERN, parseMetaTimestamp, parseTimestampFromFilename, formatTimestamp, formatMtime, getReportMeta, makeOptionLabel, getReportStage, findLatestByStage } from "./utils/report-ui.js";
+
 const __dirname = dirname(new URL(import.meta.url).pathname);
 
-const REPORT_PATTERN = /^report-stage\d+-(full|inc)-\d{4}-\d{2}-\d{2}(-from-\d{4}-\d{2}-\d{2})?\.html$/;
-
-function parseMetaTagTimestamp(fp: string): string {
-  try {
-    const content = readFileSync(fp, "utf-8");
-    const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
-    if (m) {
-      const parts = m[1].split(",");
-      return parts[2] || "";
-    }
-  } catch {}
-  return "";
-}
-
-function parseTimestampFromFilename(filename: string): string {
-  const m = filename.match(/-(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] + "T00:00:00.000Z" : "";
-}
 
 export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: string, stripNotes: boolean = true) {
   if (subpath) ghPagesDir = join(ghPagesDir, subpath);
@@ -42,52 +26,18 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
   for (const r of allReports) {
     const fp = join(outputDir, r);
     if (!existsSync(fp)) continue;
-    let runLabel = "", changeCount = 0;
-    try {
-      const content = readFileSync(fp, "utf-8");
-      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
-      if (m) {
-        const parts = m[1].split(",");
-        runLabel = parts[0] === "inc" ? "[Inc]" : "[Full]";
-        changeCount = parseInt(parts[1], 10) || 0;
-      }
-    } catch {}
-    let dateStr = "";
-    const ts = parseMetaTagTimestamp(fp);
-    if (ts) {
-      const d = new Date(ts);
-      if (!isNaN(d.getTime())) {
-        dateStr = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-      }
-    }
-    if (!dateStr) {
-      try {
-        const st = statSync(fp);
-        const d = st.mtime;
-        dateStr = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-      } catch {}
-    }
-    const rStage = (r.match(/^report-stage(\d+)/) || [])[1];
-    const stageLabel = rStage ? "[Stage " + rStage + "] " : "";
-    const label = [stageLabel + runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
+    const meta = getReportMeta(fp);
+    const ts = parseMetaTimestamp(fp);
+    const dateStr = ts ? formatTimestamp(ts) : formatMtime(fp);
+    const rStage = getReportStage(r);
+    const label = makeOptionLabel(meta.runType, dateStr, meta.changeCount, rStage);
     optionsHtml += '<option value="' + r + '">' + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }
 
   const navTmpl = readFileSync(join(__dirname, "..", "templates", "nav.html"), "utf-8");
 
-  // Determine latest file per stage for nav links
-  let stage1Latest = "report-stage1.html";
-  let stage2Latest = "report-stage2.html";
-  const sorted = [...allReports].sort((a, b) => {
-    const ta = parseMetaTagTimestamp(join(outputDir, a)) || parseTimestampFromFilename(a);
-    const tb = parseMetaTagTimestamp(join(outputDir, b)) || parseTimestampFromFilename(b);
-    return tb.localeCompare(ta);
-  });
-  for (const r of sorted) {
-    const stage = (r.match(/^report-stage(\d+)/) || [])[1];
-    if (stage === "1" && stage1Latest === "report-stage1.html") stage1Latest = r;
-    if (stage === "2" && stage2Latest === "report-stage2.html") stage2Latest = r;
-  }
+  const stage1Latest = findLatestByStage(allReports, outputDir, "1");
+  const stage2Latest = findLatestByStage(allReports, outputDir, "2");
 
   let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", optionsHtml);
   navHtml = navHtml.replace("{{STAGE1_LINK}}", stage1Latest);
@@ -140,17 +90,9 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
 
   for (const r of allReports) {
     const s = r.includes("stage2") ? "Stage 2" : "Stage 1";
-    const ts = parseMetaTagTimestamp(join(outputDir, r)) || parseTimestampFromFilename(r) || new Date().toISOString();
-    let runType = "full", changeCount = 0;
-    try {
-      const content = readFileSync(join(outputDir, r), "utf-8");
-      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
-      if (m) {
-        const parts = m[1].split(",");
-        runType = parts[0] === "inc" ? "inc" : "full";
-        changeCount = parseInt(parts[1], 10) || 0;
-      }
-    } catch {}
+    const ts = parseMetaTimestamp(join(outputDir, r)) || parseTimestampFromFilename(r) || new Date().toISOString();
+    const meta2 = getReportMeta(join(outputDir, r));
+    let runType = meta2.runType, changeCount = meta2.changeCount;
     reports.push({ file: r, stage: s, timestamp: ts, runType, changeCount, forks, interesting });
   }
 
