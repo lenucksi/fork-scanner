@@ -59,10 +59,12 @@ export function generateStage1Report(
   let html = loadTemplate("stage1");
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
+  const runType1 = interesting.some((f: ForkAnalysis) => f._change !== undefined) ? "inc" : "full";
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
+  html = html.replace("{{RUN_TYPE}}", runType1 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
 
-  const runType = interesting.some((f: ForkAnalysis) => f._change !== undefined) ? "inc" : "full";
+  const runType = runType1;
   const changeCount = interesting.filter((f: ForkAnalysis) => f._change !== undefined && f._change !== "unchanged").length;
   html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
 
@@ -135,10 +137,12 @@ export function generateStage2Report(
   let html = loadTemplate("stage2");
   html = html.replace("{{TOTAL_FORKS}}", String(forks.length));
   html = html.replace("{{REPO}}", esc(repo));
+  const runType2 = ordered.some((f: any) => f._change && f._change !== "unchanged") ? "inc" : "full";
   html = html.replace("{{DATE}}", new Date().toISOString().slice(0, 10));
+  html = html.replace("{{RUN_TYPE}}", runType2 === "inc" ? "Incremental scan" : "Full scan");
   html = html.replace("{{DATA_JSON}}", JSON.stringify(data));
 
-  const runType = ordered.some((f: any) => f._change && f._change !== "unchanged") ? "inc" : "full";
+  const runType = runType2;
   const changeCount = ordered.filter((f: any) => f._change && f._change !== "unchanged").length;
   html = html.replace("</head>", '<meta name="fs:meta" content="' + runType + ',' + changeCount + '">\n</head>');
 
@@ -152,7 +156,7 @@ export function generateLanding(reports: any[], outputDir: string) {
   // Sort by timestamp descending, group by stage, number sequentially
   const grouped = new Map<string, { name: string; file: string; timestamp: string; stage: string; }[]>();
   for (const r of reports) {
-    const stage = r.stage || (r.file || "").includes("stage2") ? "Stage 2" : "Stage 1";
+    const stage = r.stage || ((r.file || "").includes("stage2") ? "Stage 2" : "Stage 1");
     if (!grouped.has(stage)) grouped.set(stage, []);
     grouped.get(stage)!.push(r);
   }
