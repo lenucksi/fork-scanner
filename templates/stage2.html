@@ -82,7 +82,7 @@ tr:hover{background:var(--accent-light)}
 <div style="overflow-x:auto"><table><thead><tr><th>Feature</th><th>Forks</th><th>%</th><th>Bar</th></tr></thead><tbody id="heatmapBody"></tbody></table></div>
 
 <h2>Deep Analysis — Per Fork Details</h2>
-<p style="color:var(--text-secondary);margin-bottom:12px">Checkboxes + notes saved via serve.ts or localStorage fallback</p>
+<p style="color:var(--text-secondary);margin-bottom:12px" id="deepCoverage"></p>
 <div id="changeFilter" style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem">
   <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
     <input type="checkbox" value="new" checked onchange="applyDetailFilter()"> <span class="pill pill-new">New</span>
@@ -105,7 +105,7 @@ window.__DATA__ = {{DATA_JSON}};
 
 const D = window.__DATA__;
 
-document.getElementById("statsGrid").innerHTML = Object.entries(D.stats).map(([k,v]) =>
+document.getElementById("statsGrid").innerHTML = Object.entries(D.stats).filter(([k]) => k !== 'interestingForks').map(([k,v]) =>
   `<div class="stat-card"><div class="num" style="color:${k==='total'?'var(--accent)':k==='highValue'?'var(--green)':'var(--text)'}">${v}</div><div class="label">${k}</div></div>`
 ).join("");
 
@@ -135,6 +135,13 @@ document.getElementById("heatmapBody").innerHTML = hData.map(([feat,count]) =>
   <td><div style="height:20px;background:var(--accent-light);border-radius:4px;overflow:hidden">
   <div style="width:${Math.max(10,count/maxFreq*100)}%;height:100%;background:var(--accent);border-radius:4px"></div></div></td></tr>`
 ).join('');
+
+// Coverage statement
+const cov = document.getElementById("deepCoverage");
+const totalInteresting = D.stats.interestingForks || 0;
+const deepCount = D.stats.deepAnalyzed || 0;
+const pct = totalInteresting > 0 ? Math.round(deepCount / totalInteresting * 100) : 0;
+cov.textContent = deepCount + " of " + totalInteresting + " interesting forks deep analyzed (" + pct + "% coverage). Checkboxes + notes saved via serve.ts or localStorage fallback.";
 
 // Fork details
 const detailsEl = document.getElementById("forkDetails");

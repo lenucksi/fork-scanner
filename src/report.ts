@@ -117,11 +117,13 @@ export function generateStage2Report(
   }
   const sortedFeatures = Object.entries(heatmap).sort((a, b) => b[1] - a[1]);
 
+  const interestingCount = analysis.filter((s: ForkAnalysis) => !s.is_bot_only && s.max_ahead > 0).length;
   const data = {
     stats: {
       total: forks.length, identical: stats.identical, behind: stats.behind,
       aheadBot: stats.aheadBot, aheadHuman: stats.aheadHuman,
       deepAnalyzed: deepEntries.length,
+      interestingForks: interestingCount,
       highValue: deepEntries.filter(([, r]) => r.value_assessment === "high").length,
     },
     ordered, heatmap: sortedFeatures, forkCount: deepEntries.length,
