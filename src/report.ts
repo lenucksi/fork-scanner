@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
@@ -151,7 +152,7 @@ export function generateLanding(reports: any[], outputDir: string) {
   // Sort by timestamp descending, group by stage, number sequentially
   const grouped = new Map<string, { name: string; file: string; timestamp: string; stage: string; }[]>();
   for (const r of reports) {
-    const stage = r.stage || (r.file || "").includes("stage2") ? "Stage 2" : "Stage 1";
+    const stage = r.stage || ((r.file || "").includes("stage2") ? "Stage 2" : "Stage 1");
     if (!grouped.has(stage)) grouped.set(stage, []);
     grouped.get(stage)!.push(r);
   }
