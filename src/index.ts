@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+// SPDX-License-Identifier: AGPL-3.0-only
 import { existsSync, mkdirSync, readFileSync, cpSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -29,6 +30,8 @@ interface Args {
   "prepare-deep": boolean;
   "merge-deep": string | null;
   "gh-pages": boolean;
+  "gh-pages-subpath": string | undefined;
+  "gh-pages-notes": boolean;
   incremental: boolean;
   versioned: boolean;
 }
@@ -48,6 +51,8 @@ async function main() {
     .option("prepare-deep", { type: "boolean", default: false, describe: "Stage 1 + prepare deep-input files" })
     .option("merge-deep", { type: "string", describe: "Deep output dir to merge into report" })
     .option("gh-pages", { type: "boolean", default: false, describe: "Export static GH Pages site" })
+    .option("gh-pages-subpath", { type: "string", describe: "Subdirectory within gh-pages export (e.g., mrlesk-backlog.md)" })
+    .option("gh-pages-notes", { type: "boolean", default: false, describe: "Include user notes in gh-pages export" })
     .option("incremental", { type: "boolean", default: false, describe: "Incremental: only re-scan changed forks" })
     .option("versioned", { alias: "v", type: "boolean", default: false, describe: "Versioned output files" })
     .version(false)
@@ -91,10 +96,10 @@ async function main() {
     } catch {}
     const notesData = existsSync(join(outputDir, "notes.json"))
       ? JSON.parse(readFileSync(join(outputDir, "notes.json"), "utf-8")) : {};
-    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, argv.versioned, notesData);
+    generateStage2Report(forksData, [], analysisData, outputDir, deepMap, prsData, argv.versioned, notesData, repo);
     console.log("Stage 2 report generated with " + deepMap.size + " deep analyses.");
     if (argv["gh-pages"]) {
-      exportGhPages(outputDir, join(outputDir, "gh-pages"));
+      exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
     }
     if (argv.serve) startServer(outputDir, argv.port);
     return;
@@ -136,8 +141,8 @@ async function main() {
         const existingAnalysis = JSON.parse(readFileSync(join(outputDir, "analysis.json"), "utf-8"));
         const existingForks = loadForks(outputDir);
         const existingCompare = loadCompareJsonl(outputDir);
-        generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, argv.versioned);
-        if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"));
+        generateStage1Report(existingForks, existingCompare, existingAnalysis, outputDir, argv.versioned, repo);
+        if (argv["gh-pages"]) exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
         if (argv.serve) startServer(outputDir, argv.port);
         return;
       }
@@ -165,7 +170,7 @@ async function main() {
       const allOwners = [...new Set([...oldForks, ...freshForks].map((f: Fork) => f.owner))];
       const prMap = await matchPRs(repo, allOwners, outputDir);
 
-      generateStage1Report(freshForks, merged, analysisData, outputDir, argv.versioned);
+      generateStage1Report(freshForks, merged, analysisData, outputDir, argv.versioned, repo);
 
       const interesting = analysisData.filter((f: ForkAnalysis) => !f.is_bot_only && f.max_ahead > 0);
       console.log("\n  Incremental scan complete: " + interesting.length + " interesting forks");
@@ -176,7 +181,7 @@ async function main() {
       }
 
       if (argv["gh-pages"]) {
-        exportGhPages(outputDir, join(outputDir, "gh-pages"));
+        exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
       }
       if (argv.serve) startServer(outputDir, argv.port);
       return;
@@ -200,7 +205,7 @@ async function main() {
   const prMap = await matchPRs(repo, forkOwners, outputDir);
 
   // Report
-  generateStage1Report(forks, allResults, analysisData, outputDir, argv.versioned);
+  generateStage1Report(forks, allResults, analysisData, outputDir, argv.versioned, repo);
 
   const interesting = analysisData.filter((f) => !f.is_bot_only && f.max_ahead > 0);
   console.log("\n  Stage 1 complete: " + interesting.length + " interesting forks");
@@ -223,7 +228,7 @@ async function main() {
   }
 
   if (argv["gh-pages"]) {
-    exportGhPages(outputDir, join(outputDir, "gh-pages"));
+    exportGhPages(outputDir, join(outputDir, "gh-pages"), argv["gh-pages-subpath"], !argv["gh-pages-notes"]);
   }
   if (argv.serve) startServer(outputDir, argv.port);
 }
@@ -266,6 +271,8 @@ async function runInteractive(outputDir: string) {
     "prepare-deep": false,
     "merge-deep": undefined,
     "gh-pages": false,
+    "gh-pages-subpath": undefined,
+    "gh-pages-notes": false,
     versioned: false,
   };
 
@@ -290,7 +297,7 @@ async function runInteractive(outputDir: string) {
     console.log("  Prepared " + inputs.length + " deep-input files for sub-agents.");
   }
 
-  generateStage1Report(forks, allResults, analysisData, argv.output, argv.versioned);
+  generateStage1Report(forks, allResults, analysisData, argv.output, argv.versioned, repo);
   console.log("  Stage 1 report generated.");
 
   if (doServe) startServer(argv.output, port);
