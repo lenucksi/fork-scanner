@@ -109,7 +109,8 @@ function generateNavBar(outputDir: string, currentFile?: string): string {
       } catch {}
     }
 
-    const parts2 = [runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean);
+    const stageLabel = currentStage ? "" : "[Stage " + rStage + "] ";
+    const parts2 = [stageLabel + runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean);
     const label = parts2.join(" ");
     const selected = r === currentFile ? " selected" : "";
     options += '<option value="/' + r + '"' + selected + ">" + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";

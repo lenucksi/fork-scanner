@@ -67,7 +67,9 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
         dateStr = String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
       } catch {}
     }
-    const label = [runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
+    const rStage = (r.match(/^report-stage(\d+)/) || [])[1];
+    const stageLabel = rStage ? "[Stage " + rStage + "] " : "";
+    const label = [stageLabel + runLabel, dateStr, changeCount > 0 ? "\u00b7 " + changeCount + " changes" : ""].filter(Boolean).join(" ");
     optionsHtml += '<option value="' + r + '">' + (label || r.replace(/\.html$/, "").replace("report-", "")) + "</option>";
   }
 
@@ -139,7 +141,17 @@ export function exportGhPages(outputDir: string, ghPagesDir: string, subpath?: s
   for (const r of allReports) {
     const s = r.includes("stage2") ? "Stage 2" : "Stage 1";
     const ts = parseMetaTagTimestamp(join(outputDir, r)) || parseTimestampFromFilename(r) || new Date().toISOString();
-    reports.push({ file: r, stage: s, timestamp: ts, forks, interesting });
+    let runType = "full", changeCount = 0;
+    try {
+      const content = readFileSync(join(outputDir, r), "utf-8");
+      const m = content.match(/<meta name="fs:meta" content="([^"]+)">/);
+      if (m) {
+        const parts = m[1].split(",");
+        runType = parts[0] === "inc" ? "inc" : "full";
+        changeCount = parseInt(parts[1], 10) || 0;
+      }
+    } catch {}
+    reports.push({ file: r, stage: s, timestamp: ts, runType, changeCount, forks, interesting });
   }
 
   generateLanding(reports, ghPagesDir);

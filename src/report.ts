@@ -228,7 +228,16 @@ export function generateLanding(reports: any[], outputDir: string) {
   let html = loadTemplate("landing");
   // Inject nav bar for static export (gh-pages) - resolve latest per stage
   const navTmpl = readFileSync(join(TEMPLATE_DIR, "nav.html"), "utf-8");
-  let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", "");
+  let versionOptions = "";
+  for (const r of reports) {
+    if (!r.file) continue;
+    const runLabel = r.runType === "inc" ? "[Inc]" : "[Full]";
+    const dateStr = r.timestamp ? (() => { try { const d = new Date(r.timestamp); if (!isNaN(d.getTime())) return String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch {} return ""; })() : "";
+    const stageLabel = "[Stage " + (r.stage === "Stage 2" ? "2" : "1") + "] ";
+    const label = [stageLabel + runLabel, dateStr, (r.changeCount || 0) > 0 ? "· " + r.changeCount + " changes" : ""].filter(Boolean).join(" ");
+    versionOptions += '<option value="' + r.file + '">' + (label || r.file.replace(/\.html$/, "").replace("report-", "")) + "</option>";
+  }
+  let navHtml = navTmpl.replace("{{VERSION_OPTIONS}}", versionOptions);
   const stage1Latest = flat.find((r: any) => r.stage === "Stage 1")?.file || "report-stage1.html";
   const stage2Latest = flat.find((r: any) => r.stage === "Stage 2")?.file || "report-stage2.html";
   navHtml = navHtml.replace("{{STAGE1_LINK}}", stage1Latest);
