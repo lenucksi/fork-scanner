@@ -24,7 +24,7 @@
     "dev": "bun --watch run src/index.ts --output ./scan-output --serve"
   },
   "dependencies": {
-    "yargs": "^17.7.2"
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
