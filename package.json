@@ -30,6 +30,6 @@
     "@playwright/test": "^1.60.0",
     "@types/bun": "latest",
     "@types/yargs": "^17.0.33",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.0"
   }
 }
